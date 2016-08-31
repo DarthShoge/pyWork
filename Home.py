@@ -1,9 +1,13 @@
+from itertools import product
+
 import pandas as pd
 import matplotlib.pyplot as plt
 import quandl as qdl
 import scipy.optimize as sp
 import numpy as np
 from abc import ABCMeta, abstractmethod
+from enum import Enum
+from copy import deepcopy
 from numbers import Number
 from matplotlib.pyplot import plot
 
@@ -16,6 +20,10 @@ class DataProvider(object):
     def get_rates(self):
         raise NotImplementedError('Must implement get_rates()')
 
+
+class Direction(Enum) :
+    Short = -1
+    Long = 1
 
 class FREDDataProvider(DataProvider):
     def __init__(self):
@@ -67,30 +75,71 @@ class TradeLine() :
     def __repr__(self):
         return 'p=%s, s=%s, r=%s' % (self.price,self.stop,self.risk)
 
-
-class PnLLine() :
+class PnLLine:
     def __init__(self,trade_details,capital):
+        self.pip_value = 0.1
+        self.pnl = 0
         self.trade_details = trade_details
+        self.last_observed_price = trade_details.price
+        self.direction = Direction.Short if trade_details.risk > 0 else Direction.Long
         fill_details = self.calc_position_size_in_k(capital)
         self.position_sz = fill_details[0]
         self.true_stop_pips = fill_details[1]
-        self.pip_value = 0.1
-        self.pnl = 0
+
 
     '''Assumption: price has no spread. Usage: to use potion size we say that if position size
     of 50k is worked out then for each pip move we make/lose 5 or 50*0.1'''
     def calc_position_size_in_k(self, capital,trade_friction_func = lambda x : x):
-        friction_pips = trade_friction_func(self.trade_details.stop_pips)
-        position_size_in_k = (capital * self.trade_details.risk) / (friction_pips * self.pip_value)
+        if self.trade_details.price == self.trade_details.stop:
+            return 0, 0
+
+        friction_pips =  trade_friction_func(self.trade_details.stop_pips)
+        position_size_in_k = (capital * self.trade_details.risk) / (abs(friction_pips) * self.pip_value)
         return (round(position_size_in_k, 0), friction_pips)
+
+    def __repr__(self):
+        return "p: %s k: %s pnl: %s r:%s" % (self.trade_details.price,self.position_sz,self.pnl,self.trade_details.risk)
+
+    def __sub__(self, other):
+        if self.trade_details.currency != other.trade_details.currency :
+            raise IndexError('currencies %s - %s are not compatible' % (self.trade_details.currency, other.trade_details.currency))
+
+        price_difference = other.trade_details.price - self.last_observed_price
+        selfcopy = deepcopy(self)
+        residual_risk = self.trade_details.risk + other.trade_details.risk
+        is_stopped_out = (self.trade_details.risk > 0 and other.trade_details.price < self.trade_details.stop) or \
+                         (self.trade_details.risk < 0 and other.trade_details.price > self.trade_details.stop)
+        if not is_stopped_out :
+            pip_difference = get_pips(price_difference, self.trade_details.currency)
+            selfcopy.pnl = pip_difference * self.position_sz * selfcopy.pip_value
+            selfcopy.position_sz = self.position_sz + other.position_sz
+            selfcopy.trade_details.risk = residual_risk
+            selfcopy.last_observed_price = other.trade_details.price
+        else:
+            pip_difference = get_pips(self.trade_details.stop - self.last_observed_price, self.trade_details.currency)
+            selfcopy.pnl = pip_difference * selfcopy.pip_value
+            selfcopy.risk = 0
+        return selfcopy
+
 
     @abstractmethod
     def no_friction(self,x):
         return x
 
+class Holding :
+
+    def __init__(self, initiating_line):
+        self.lines = [initiating_line]
+
+
+
 def get_currency_dataframe(cur):
     return qdl.get('BOE/' + cur)
 
+def print_full(x):
+    pd.set_option('display.max_rows', len(x))
+    print(x)
+    pd.reset_option('display.max_rows')
 
 def read_raw_data():
     df = pd.read_csv('EURGBPUSDJPY.csv', index_col='Date', parse_dates=True)
@@ -227,10 +276,10 @@ def calc_rolling_risk(price_df, theoretical_r_df, max_r) :
         r_ser = rolling_risk_df[currency]
         for x in range(1,rows) :
             expected_r = r_ser[x]
-            r_ser[x] = calc_real_risk(p_ser[x],p_ser[x - 1],r_ser[x - 1],expected_r, max_r)
+            r_ser[x] = calc_real_risk(p_ser[x], p_ser[x - 1], r_ser[x - 1], expected_r, max_r)
     return rolling_risk_df
 
-def calc_avg_closing_range(data_df , periods, avging_periods):
+def calc_avg_closing_range(data_df,periods,avging_periods):
     return (data_df.rolling(window=periods).max() - data_df.rolling(window=periods).min()).rolling(window=avging_periods).mean()
 
 def calc_stop_prices(risk_df,price_df, short_avg_period = 7) :
@@ -241,12 +290,16 @@ def calc_stop_prices(risk_df,price_df, short_avg_period = 7) :
     #stop_as_price_df.fillna(value=0, inplace=True)
     return price_df - stop_as_price_df
 
-def get_pips(ser) :
-    trade,contra = get_currency_pair_tuple(ser.name)
+
+def get_pips(value, currency=None):
+    currency = currency if currency else value.name
+    trade,contra = get_currency_pair_tuple(currency)
     if(contra == 'JPY') :
-        return ser * 100
+        return value * 100
     else:
-        return ser * 10000
+        return value * 10000
+
+
 
 def price_data_to_trade_lines(price_df,rolling_risk_df,stop_df,pips_df):
     trade_details_df = pd.DataFrame(index=price_df.index.values, columns=price_df.columns.values)
@@ -256,37 +309,54 @@ def price_data_to_trade_lines(price_df,rolling_risk_df,stop_df,pips_df):
             trade_details_df.set_value(i,c,td)
     return trade_details_df
 
-def close_out_trades(portfolio,today) :
-    closed_positions = []
-    for x in portfolio :
-        is_long = x.trade_details.risk > 0
-        if is_long and today.price < x.trade_details.stop_price\
-                or not is_long and today.price > x.trade_details.stop_price :
-            abs_pos = abs(x.position_sz)
-            x.pnl = -(x.pip_value * abs_pos * x.true_stop_pips)
-            portfolio.remove(x)
-            closed_positions.append(x)
+def stop_has_been_hit(pnl_line,today) :
+    is_long = pnl_line.trade_details.risk > 0
+    if is_long and today.price < pnl_line.trade_details.stop\
+            or not is_long and today.price > pnl_line.trade_details.stop :
+        abs_pos = abs(pnl_line.position_sz)
+        pnl_line.pnl = -(pnl_line.pip_value * abs_pos * pnl_line.true_stop_pips)
+        pnl_line.trade_details.risk = 0
+        return True
+    else:
+        return False
 
-    return (portfolio,sum([s.pnl for s in closed_positions]))
+def walk_forward(current_pos, today, capital):
+    if np.isnan(today.stop) : return current_pos
+    has_risk = not np.isnan(today.risk) and today.risk != 0
 
-def walk_forward(portfolio_capital_tpl, today) :
-    new_portfolio = close_out_trades(portfolio_capital_tpl[0],today)
-    new_capital = new_portfolio[1] + portfolio_capital_tpl[1]
-    for trade_line in today.values :
-        if trade_line.risk != 0:
-            new_portfolio.append(PnLLine(trade_line,new_capital))
-    return (new_portfolio,new_capital)
+    today_pnlLine = PnLLine(today,capital)
+    if current_pos is None and has_risk:
+        return today_pnlLine
+
+    if current_pos is None and not has_risk:
+        return None
+    else :
+        #if stop_has_been_hit(current_pos,today) :
+         #   1+1
+        return current_pos - today_pnlLine
+
 
 def backtest(capital, trade_details_df) :
     backtest_results_df = pd.DataFrame(index= trade_details_df.index.values, columns=trade_details_df.columns.values)
+    backtest_results_df = backtest_results_df.where((pd.notnull(backtest_results_df)), None)
     last_t = trade_details_df.index.values[0]
-    running_portfolio_capital = ([],capital)
+    backtest_results_df.set_value(last_t, 'PnL', capital)
     for t in trade_details_df.index.values[1:] :
-        todays_t = walk_forward(portfolio_capital_tpl=running_portfolio_capital, today= trade_details_df.ix[t])
-        backtest_results_df.set_value(t,'Portfolio',todays_t[0])
-        backtest_results_df.set_value(t, 'PnL', todays_t[1])
-        running_portfolio_capital = todays_t
-        last_t = todays_t
+        current_capital = backtest_results_df.ix[last_t, 'PnL']
+        for currency in trade_details_df.columns.values :
+            todays_details = trade_details_df.ix[t,currency]
+            current_pos = backtest_results_df.ix[last_t,currency]
+
+            current_pos = walk_forward(current_pos,todays_details,current_capital)
+            if current_pos is not None :
+                current_capital += current_pos.pnl
+
+            if current_pos is not None and current_pos.trade_details.risk == 0:
+                backtest_results_df.set_value(t, currency, None)
+            else:
+                backtest_results_df.set_value(t,currency,current_pos)
+        backtest_results_df.set_value(t,'PnL',current_capital)
+        last_t = t
     return backtest_results_df
 
 
@@ -305,12 +375,14 @@ def run_algo(periods = 14, risk_per_trade = 0.01,max_risk = 0.05):
     holder.stop_price_df = calc_stop_prices(holder.rolling_risk,holder.data_df)
     holder.stop_pips_df = (holder.stop_price_df - holder.data_df).apply(get_pips).fillna(value=0)
     daily_risk = holder.rolling_risk - holder.rolling_risk.shift(1)
+    daily_risk.fillna(0,inplace=True)
     holder.trade_details = price_data_to_trade_lines(holder.data_df, daily_risk, holder.stop_price_df, holder.stop_pips_df)
     return holder
 
 
 if __name__ == "__main__":
     h = run_algo()
-    pnl1 = PnLLine(h.trade_details.ix[-1,-2],10000)
+    captial = 10000
+    bf_result = backtest(captial,h.trade_details['AUDUSD'].to_frame())
 
 
