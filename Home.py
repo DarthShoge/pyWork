@@ -150,7 +150,7 @@ class PnLLine:
         return x
 
 
-class Holding:
+class Position:
     def __init__(self, initiating_line, capital):
         if initiating_line.risk == 0:
             raise LookupError('cannot initiate holding with no risk')
@@ -182,7 +182,7 @@ class Holding:
                 running_pnl += line.pnl
         return running_pnl
 
-    def revalue_holding(self, trade_line, current_capital):
+    def revalue_position(self, trade_line, current_capital):
 
         if trade_line.currency != self.currency:
             raise LookupError('Currencies do not match')
@@ -216,6 +216,46 @@ class Holding:
 
         self.pnl_history.append(locked_in_pnl)
         return locked_in_pnl
+
+
+class Backtester :
+
+    @staticmethod
+    def calculate_position(current_holding, today, capital):
+        if np.isnan(today.stop): return current_holding
+        today_has_risk = not np.isnan(today.risk) and today.risk != 0
+
+        if current_holding is None and today_has_risk:
+            return Position(today, capital)
+
+        if current_holding is None and not today_has_risk:
+            return None
+        else:
+            current_holding.revalue_position(today, capital)
+            return current_holding
+
+    @staticmethod
+    def backtest(capital, trade_details_df):
+        backtest_results_df = pd.DataFrame(index=trade_details_df.index.values, columns=trade_details_df.columns.values)
+        backtest_results_df = backtest_results_df.where((pd.notnull(backtest_results_df)), None)
+        last_t = trade_details_df.index.values[0]
+        backtest_results_df.set_value(last_t, 'PnL', capital)
+        for t in trade_details_df.index.values[1:]:
+            current_capital = backtest_results_df.ix[last_t, 'PnL']
+            for currency in trade_details_df.columns.values:
+                todays_details = trade_details_df.ix[t, currency]
+                current_position = backtest_results_df.ix[last_t, currency]
+
+                current_position = Backtester.calculate_position(current_position, todays_details, capital)
+
+                if current_position is not None:
+                    current_capital += current_position.pnl_history[-1]
+
+                backtest_results_df.set_value(t, currency, current_position)
+
+            backtest_results_df.set_value(t, 'PnL', current_capital)
+            last_t = t
+        return backtest_results_df
 
 
 def get_currency_dataframe(cur):
@@ -397,53 +437,6 @@ def price_data_to_trade_lines(price_df, rolling_risk_df, stop_df, pips_df):
     return trade_details_df
 
 
-def stop_has_been_hit(pnl_line, today):
-    is_long = pnl_line.trade_details.risk > 0
-    if is_long and today.price < pnl_line.trade_details.stop \
-            or not is_long and today.price > pnl_line.trade_details.stop:
-        abs_pos = abs(pnl_line.position_sz)
-        pnl_line.pnl = -(pnl_line.pip_value * abs_pos * pnl_line.true_stop_pips)
-        pnl_line.trade_details.risk = 0
-        return True
-    else:
-        return False
-
-
-def calculate_holding(current_holding, today, capital):
-    if np.isnan(today.stop): return current_holding
-    today_has_risk = not np.isnan(today.risk) and today.risk != 0
-
-    if current_holding is None and today_has_risk:
-        return Holding(today, capital)
-
-    if current_holding is None and not today_has_risk:
-        return None
-    else:
-        current_holding.revalue_holding(today, capital)
-        return current_holding
-
-
-def backtest(capital, trade_details_df):
-    backtest_results_df = pd.DataFrame(index=trade_details_df.index.values, columns=trade_details_df.columns.values)
-    backtest_results_df = backtest_results_df.where((pd.notnull(backtest_results_df)), None)
-    last_t = trade_details_df.index.values[0]
-    backtest_results_df.set_value(last_t, 'PnL', capital)
-    for t in trade_details_df.index.values[1:]:
-        current_capital = backtest_results_df.ix[last_t, 'PnL']
-        for currency in trade_details_df.columns.values:
-            todays_details = trade_details_df.ix[t, currency]
-            current_holding = backtest_results_df.ix[last_t, currency]
-
-            current_holding = calculate_holding(current_holding, todays_details, capital)
-
-            if current_holding is not None:
-                current_capital += current_holding.pnl_history[-1]
-
-            backtest_results_df.set_value(t, currency, current_holding)
-
-        backtest_results_df.set_value(t, 'PnL', current_capital)
-        last_t = t
-    return backtest_results_df
 
 
 def run_algo(periods=14, risk_per_trade=0.01, max_risk=0.05):
@@ -453,7 +446,7 @@ def run_algo(periods=14, risk_per_trade=0.01, max_risk=0.05):
 
     holder.relative_returns_df = get_relative_returns(holder.data_df)
     holder.rolling_rel_df = get_rolling_weighted_returns(holder.relative_returns_df, periods=periods)
-    holder.ranked_rolling_df = holder.rolling_rel_df.rank(axis=1)
+    holder.ranked_rolling_df = holder.rolling_rel_df.rank(axis=1, ascending=False)
     holder.ranked_rolling_df.fillna(0, inplace=True)
     holder.theoretical_risk = holder.ranked_rolling_df.apply(
         lambda x: x.apply(lambda y: calc_expected_prc_pos(risk_per_trade, cols, y)))
@@ -480,7 +473,7 @@ if __name__ == "__main__":
     cap1 = 10000
 
     dff = pd.DataFrame(index=pd.date_range('2012-01-01', '2012-01-05'), data=line_dem, columns=[cur])
-    bt = backtest(cap1, dff)
+    bt = Backtester.backtest(cap1, dff)
 
     # tl1 = TradeLine(1.8000,1.8020,20,-0.01,'A',None)
     # cap1 = 10000
@@ -490,7 +483,7 @@ if __name__ == "__main__":
     # t31 = TradeLine(1.7920,1.7890,-30,0.03,'A',None)
     # cap1 += h1.revalue_holding(t31,cap1)
 
-    h = run_algo()
+    h = run_algo(periods=1)
     captial = 10000
-    bf_result = backtest(captial, h.trade_details)
+    bf_result = Backtester.backtest(captial, h.trade_details)
     plot_data(bf_result.PnL)
