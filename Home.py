@@ -7,6 +7,7 @@ import scipy.optimize as sp
 import numpy as np
 from abc import ABCMeta, abstractmethod
 from enum import Enum
+import time
 from copy import deepcopy
 from numbers import Number
 from matplotlib.pyplot import plot
@@ -64,6 +65,44 @@ class FREDDataProvider(DataProvider):
 
         return index_cur_df
 
+class Strategy(object) :
+    __metaclass__ = ABCMeta
+
+    @abstractmethod
+    def run(self, rates):
+        raise NotImplementedError('Must implement run()')
+
+class StrengthMomentum(Strategy):
+
+    def __init__(self,lookback=5, risk_per_trade=0.01, max_risk=0.05):
+        self.lookback = lookback
+        self.risk_per_trade = risk_per_trade
+        self.max_risk=max_risk
+
+    def run(self, rates):
+        return self.run_with_diagnostics(rates).trade_details
+
+    def run_with_diagnostics(self, rates):
+        diagnostic = type('', (), {})()
+        diagnostic.data_df = rates
+        rows, cols = diagnostic.data_df.shape
+
+        diagnostic.relative_returns_df = get_relative_returns(diagnostic.data_df)
+        diagnostic.rolling_rel_df = get_rolling_weighted_returns(diagnostic.relative_returns_df, periods= self.lookback)
+        diagnostic.ranked_rolling_df = diagnostic.rolling_rel_df.rank(axis=1, ascending=False)
+        diagnostic.ranked_rolling_df.fillna(0, inplace=True)
+        diagnostic.theoretical_risk = diagnostic.ranked_rolling_df.apply(
+            lambda x: x.apply(lambda y: calc_expected_prc_pos(self.risk_per_trade, cols, y)))
+        diagnostic.conventional_t_risk = convert_to_natural_pair_df(diagnostic.data_df.columns.values, diagnostic.theoretical_risk)
+        diagnostic.rolling_risk = calc_rolling_risk(diagnostic.data_df, diagnostic.conventional_t_risk, self.max_risk)
+        diagnostic.stop_price_df = calc_stop_prices(diagnostic.rolling_risk, diagnostic.data_df)
+        diagnostic.stop_pips_df = (diagnostic.stop_price_df - diagnostic.data_df).apply(get_pips).fillna(value=0)
+        daily_risk = diagnostic.rolling_risk - diagnostic.rolling_risk.shift(1)
+        daily_risk.fillna(0, inplace=True)
+        diagnostic.trade_details = price_data_to_trade_lines(diagnostic.data_df, daily_risk, diagnostic.stop_price_df,
+                                                         diagnostic.stop_pips_df)
+
+        return diagnostic
 
 class TradeLine():
     def __init__(self, price, stop, stop_pips, risk, currency, trade_date):
@@ -78,12 +117,13 @@ class TradeLine():
         return 'p=%s, s=%s, r=%s' % (self.price, self.stop, self.risk)
 
 
-class PnLLine:
+class Transaction:
     def __init__(self, trade_details, capital):
         self.pip_value = 0.1
         self.__historic_pnl = []
         self.pnl = 0
         self.trade_details = trade_details
+        self.risk = trade_details.risk
         self.last_observed_price = trade_details.price
         self.direction = Direction.Long if trade_details.risk > 0 else Direction.Short
         fill_details = self.calc_position_size_in_k(capital)
@@ -91,7 +131,7 @@ class PnLLine:
         self.true_stop_pips = fill_details[1]
 
     def is_closed(self):
-        return self.trade_details.risk == 0
+        return self.risk == 0
 
     @property
     def pnl(self):
@@ -109,12 +149,12 @@ class PnLLine:
             return 0, 0
 
         friction_pips = trade_friction_func(self.trade_details.stop_pips)
-        position_size_in_k = (capital * self.trade_details.risk) / (abs(friction_pips) * self.pip_value)
+        position_size_in_k = (capital * self.risk) / (abs(friction_pips) * self.pip_value)
         return (round(position_size_in_k, 0), friction_pips)
 
     def __repr__(self):
         return "p: %s k: %s pnl: %s r:%s" % (
-        self.trade_details.price, self.position_sz, self.pnl, self.trade_details.risk)
+        self.trade_details.price, self.position_sz, self.pnl, self.risk)
 
     def value_since_last_observation(self, price, delta_price=np.NaN, position_sz=np.NaN):
         position_sz = self.position_sz if np.isnan(position_sz) else position_sz
@@ -123,26 +163,26 @@ class PnLLine:
         pip_difference = get_pips(price_difference, self.trade_details.currency)
         return pip_difference * position_sz * self.pip_value
 
-    def close_position(self, price, position_risk_to_close=np.NaN):
+    def close_transaction(self, price, risk_to_close=np.NaN):
 
-        if self.trade_details.risk == 0:
+        if self.risk == 0:
             return 0
 
-        position_risk_to_close = -self.trade_details.risk if np.isnan(
-            position_risk_to_close) else position_risk_to_close
-        position_sz_to_close = (position_risk_to_close / self.trade_details.risk) * self.position_sz
+        risk_to_close = -self.risk if np.isnan(
+            risk_to_close) else risk_to_close
+        position_sz_to_close = (risk_to_close / self.risk) * self.position_sz
 
-        if self.direction is Direction.Short and position_risk_to_close < 0 or \
-                                self.direction is Direction.Long and position_risk_to_close > 0:
+        if self.direction is Direction.Short and risk_to_close < 0 or \
+                                self.direction is Direction.Long and risk_to_close > 0:
             raise RuntimeError(
                 'Currency %s Cannot close out %s trade for %s risk on date %s with risk %s' %
-                (self.trade_details.currency, self.direction, position_risk_to_close,self.trade_details.trade_date, self.trade_details.risk))
+                (self.trade_details.currency, self.direction, risk_to_close, self.trade_details.trade_date, self.risk))
 
         pnl_from_inception = sum(self.__historic_pnl)
         pnl_to_close = self.value_since_last_observation(price, self.trade_details.price, -position_sz_to_close)
         self.pnl = pnl_to_close
         self.position_sz += position_sz_to_close
-        self.trade_details.risk += position_risk_to_close
+        self.risk += risk_to_close
         return self.pnl
 
     @abstractmethod
@@ -155,7 +195,7 @@ class Position:
         if initiating_line.risk == 0:
             raise LookupError('cannot initiate holding with no risk')
 
-        as_pnl = PnLLine(initiating_line, capital)
+        as_pnl = Transaction(initiating_line, capital)
         self.lines = [as_pnl]
         self.pnl_history = [0]
         self.currency = initiating_line.currency
@@ -178,7 +218,7 @@ class Position:
             long_stopped_out = line.direction is Direction.Long and price < line.trade_details.stop
             if short_stopped_out or long_stopped_out:
                 line.pnl = line.value_since_last_observation(line.trade_details.stop, line.trade_details.price)
-                line.trade_details.risk = 0
+                line.risk = 0
                 running_pnl += line.pnl
         return running_pnl
 
@@ -187,7 +227,7 @@ class Position:
         if trade_line.currency != self.currency:
             raise LookupError('Currencies do not match')
 
-        pnl_line = PnLLine(trade_line, current_capital)
+        pnl_line = Transaction(trade_line, current_capital)
         locked_in_pnl = 0
         locked_in_pnl += self.close_stop_outs(trade_line.price)
 
@@ -198,19 +238,19 @@ class Position:
             while abs(residual_risk) > 0:
                 if not self.lines:
                     trade_line.risk = residual_risk
-                    pnl_line = PnLLine(trade_line, current_capital)
+                    pnl_line = Transaction(trade_line, current_capital)
                     self.lines.append(pnl_line)
                     residual_risk = 0
                 else:
                     for line in self.lines:
                         # fully close out the trade else partially close out
-                        if abs(residual_risk) > abs(line.trade_details.risk):
-                            residual_risk += line.trade_details.risk
-                            locked_in_pnl += line.close_position(price=trade_line.price)
+                        if abs(residual_risk) > abs(line.risk):
+                            residual_risk += line.risk
+                            locked_in_pnl += line.close_transaction(price=trade_line.price)
                             self.lines.remove(line)
                         else:
-                            locked_in_pnl += line.close_position(trade_line.price, residual_risk)
-                            if line.trade_details.risk == 0:
+                            locked_in_pnl += line.close_transaction(trade_line.price, residual_risk)
+                            if line.risk == 0:
                                 self.lines.remove(line)
                             residual_risk = 0
 
@@ -219,6 +259,10 @@ class Position:
 
 
 class Backtester :
+
+    def __init__(self, dataprovider, strategy):
+        self.dataprovider = dataprovider
+        self.strategy = strategy
 
     @staticmethod
     def calculate_position(current_holding, today, capital):
@@ -257,6 +301,12 @@ class Backtester :
             last_t = t
         return backtest_results_df
 
+    def full_backtest(self, capital, date_range = None):
+        rates = self.dataprovider.get_rates() if date_range is None else get_range(self.dataprovider.get_rates(),
+                                                                            date_range[0], date_range[1])
+        trade_details = self.strategy.run(rates)
+
+        return self.backtest(capital,trade_details)
 
 def get_currency_dataframe(cur):
     return qdl.get('BOE/' + cur)
@@ -437,30 +487,6 @@ def price_data_to_trade_lines(price_df, rolling_risk_df, stop_df, pips_df):
     return trade_details_df
 
 
-
-
-def run_algo(periods=14, risk_per_trade=0.01, max_risk=0.05):
-    holder = type('', (), {})()
-    holder.data_df = FREDDataProvider().get_rates()
-    rows, cols = holder.data_df.shape
-
-    holder.relative_returns_df = get_relative_returns(holder.data_df)
-    holder.rolling_rel_df = get_rolling_weighted_returns(holder.relative_returns_df, periods=periods)
-    holder.ranked_rolling_df = holder.rolling_rel_df.rank(axis=1, ascending=False)
-    holder.ranked_rolling_df.fillna(0, inplace=True)
-    holder.theoretical_risk = holder.ranked_rolling_df.apply(
-        lambda x: x.apply(lambda y: calc_expected_prc_pos(risk_per_trade, cols, y)))
-    holder.conventional_t_risk = convert_to_natural_pair_df(holder.data_df.columns.values, holder.theoretical_risk)
-    holder.rolling_risk = calc_rolling_risk(holder.data_df, holder.conventional_t_risk, max_risk)
-    holder.stop_price_df = calc_stop_prices(holder.rolling_risk, holder.data_df)
-    holder.stop_pips_df = (holder.stop_price_df - holder.data_df).apply(get_pips).fillna(value=0)
-    daily_risk = holder.rolling_risk - holder.rolling_risk.shift(1)
-    daily_risk.fillna(0, inplace=True)
-    holder.trade_details = price_data_to_trade_lines(holder.data_df, daily_risk, holder.stop_price_df,
-                                                     holder.stop_pips_df)
-    return holder
-
-
 if __name__ == "__main__":
     cur = 'EURUSD'
     tl0 = TradeLine(1.8000, np.nan, 0, 0, cur, None)
@@ -475,15 +501,12 @@ if __name__ == "__main__":
     dff = pd.DataFrame(index=pd.date_range('2012-01-01', '2012-01-05'), data=line_dem, columns=[cur])
     bt = Backtester.backtest(cap1, dff)
 
-    # tl1 = TradeLine(1.8000,1.8020,20,-0.01,'A',None)
-    # cap1 = 10000
-    # h1 = Holding(tl1,cap1)
-    # t21 = TradeLine(1.7970,1.8000,30,-0.01,'A',None)
-    # cap1 += h1.revalue_holding(t21,cap1)
-    # t31 = TradeLine(1.7920,1.7890,-30,0.03,'A',None)
-    # cap1 += h1.revalue_holding(t31,cap1)
+    strat = StrengthMomentum(lookback=2)
+    dp = FREDDataProvider()
+    my_bt = Backtester(dp,strat)
+    result = my_bt.full_backtest(10000, ('2006-01-01', time.strftime("%c")))
 
-    h = run_algo(periods=1)
+    h = run_algo(lookback=1, max_risk=0.1, date_boundaries = ('2006-01-01', time.strftime("%c")))
     captial = 10000
     bf_result = Backtester.backtest(captial, h.trade_details)
     plot_data(bf_result.PnL)
