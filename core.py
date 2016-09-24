@@ -1,16 +1,10 @@
-from itertools import product
-
-import pandas as pd
-import matplotlib.pyplot as plt
-import quandl as qdl
-import scipy.optimize as sp
-import numpy as np
 from abc import ABCMeta, abstractmethod
 from enum import Enum
-import time
-from copy import deepcopy
-from numbers import Number
-from matplotlib.pyplot import plot
+
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import quandl as qdl
 
 qdl.ApiConfig.api_key = '61oas6mNaNKgDAh27k1x'
 
@@ -65,44 +59,6 @@ class FREDDataProvider(DataProvider):
 
         return index_cur_df
 
-class Strategy(object) :
-    __metaclass__ = ABCMeta
-
-    @abstractmethod
-    def run(self, rates):
-        raise NotImplementedError('Must implement run()')
-
-class StrengthMomentum(Strategy):
-
-    def __init__(self,lookback=5, risk_per_trade=0.01, max_risk=0.05):
-        self.lookback = lookback
-        self.risk_per_trade = risk_per_trade
-        self.max_risk=max_risk
-
-    def run(self, rates):
-        return self.run_with_diagnostics(rates).trade_details
-
-    def run_with_diagnostics(self, rates):
-        diagnostic = type('', (), {})()
-        diagnostic.data_df = rates
-        rows, cols = diagnostic.data_df.shape
-
-        diagnostic.relative_returns_df = get_relative_returns(diagnostic.data_df)
-        diagnostic.rolling_rel_df = get_rolling_weighted_returns(diagnostic.relative_returns_df, periods= self.lookback)
-        diagnostic.ranked_rolling_df = diagnostic.rolling_rel_df.rank(axis=1, ascending=False)
-        diagnostic.ranked_rolling_df.fillna(0, inplace=True)
-        diagnostic.theoretical_risk = diagnostic.ranked_rolling_df.apply(
-            lambda x: x.apply(lambda y: calc_expected_prc_pos(self.risk_per_trade, cols, y)))
-        diagnostic.conventional_t_risk = convert_to_natural_pair_df(diagnostic.data_df.columns.values, diagnostic.theoretical_risk)
-        diagnostic.rolling_risk = calc_rolling_risk(diagnostic.data_df, diagnostic.conventional_t_risk, self.max_risk)
-        diagnostic.stop_price_df = calc_stop_prices(diagnostic.rolling_risk, diagnostic.data_df)
-        diagnostic.stop_pips_df = (diagnostic.stop_price_df - diagnostic.data_df).apply(get_pips).fillna(value=0)
-        daily_risk = diagnostic.rolling_risk - diagnostic.rolling_risk.shift(1)
-        daily_risk.fillna(0, inplace=True)
-        diagnostic.trade_details = price_data_to_trade_lines(diagnostic.data_df, daily_risk, diagnostic.stop_price_df,
-                                                         diagnostic.stop_pips_df)
-
-        return diagnostic
 
 class TradeLine():
     def __init__(self, price, stop, stop_pips, risk, currency, trade_date):
@@ -154,7 +110,7 @@ class Transaction:
 
     def __repr__(self):
         return "p: %s k: %s pnl: %s r:%s" % (
-        self.trade_details.price, self.position_sz, self.pnl, self.risk)
+            self.trade_details.price, self.position_sz, self.pnl, self.risk)
 
     def value_since_last_observation(self, price, delta_price=np.NaN, position_sz=np.NaN):
         position_sz = self.position_sz if np.isnan(position_sz) else position_sz
@@ -199,7 +155,7 @@ class Position:
         self.lines = [as_pnl]
         self.pnl_history = [0]
         self.currency = initiating_line.currency
-        #self.net_direction = as_pnl.direction
+        # self.net_direction = as_pnl.direction
 
     def is_closed(self):
         return True if self.line else False
@@ -258,8 +214,7 @@ class Position:
         return locked_in_pnl
 
 
-class Backtester :
-
+class Backtester:
     def __init__(self, dataprovider, strategy):
         self.dataprovider = dataprovider
         self.strategy = strategy
@@ -301,12 +256,13 @@ class Backtester :
             last_t = t
         return backtest_results_df
 
-    def full_backtest(self, capital, date_range = None):
+    def full_backtest(self, capital, date_range=None):
         rates = self.dataprovider.get_rates() if date_range is None else get_range(self.dataprovider.get_rates(),
-                                                                            date_range[0], date_range[1])
+                                                                                   date_range[0], date_range[1])
         trade_details = self.strategy.run(rates)
 
-        return self.backtest(capital,trade_details)
+        return self.backtest(capital, trade_details)
+
 
 def get_currency_dataframe(cur):
     return qdl.get('BOE/' + cur)
@@ -441,33 +397,6 @@ def calc_real_risk(p, p_minus1, current_r, expected_r, max_r):
         return min(abs(current_r), abs(real_max_r)) * polarity
 
 
-def calc_rolling_risk(price_df, theoretical_r_df, max_r):
-    rows, cols = price_df.shape
-    currencies = price_df.columns.values
-    rolling_risk_df = theoretical_r_df.copy()
-    for currency in currencies:
-        p_ser = price_df[currency]
-        r_ser = rolling_risk_df[currency]
-        for x in range(1, rows):
-            expected_r = r_ser[x]
-            r_ser[x] = calc_real_risk(p_ser[x], p_ser[x - 1], r_ser[x - 1], expected_r, max_r)
-    return rolling_risk_df
-
-
-def calc_avg_closing_range(data_df, periods, avging_periods):
-    return (data_df.rolling(window=periods).max() - data_df.rolling(window=periods).min()).rolling(
-        window=avging_periods).mean()
-
-
-def calc_stop_prices(risk_df, price_df, short_avg_period=7):
-    avg_range = calc_avg_closing_range(price_df, periods=short_avg_period, avging_periods=28) / 2
-    stop_pips_df = avg_range.apply(lambda x: get_pips(x))
-    pip_mult_ar = [100 if get_currency_pair_tuple(x)[1] == 'JPY' else 10000 for x in price_df.columns.values]
-    stop_as_price_df = (stop_pips_df / pip_mult_ar) * (risk_df.apply(lambda x: np.sign(x)))
-    # stop_as_price_df.fillna(value=0, inplace=True)
-    return price_df - stop_as_price_df
-
-
 def get_pips(value, currency=None):
     currency = currency if currency else value.name
     trade, contra = get_currency_pair_tuple(currency)
@@ -487,26 +416,3 @@ def price_data_to_trade_lines(price_df, rolling_risk_df, stop_df, pips_df):
     return trade_details_df
 
 
-if __name__ == "__main__":
-    cur = 'EURUSD'
-    tl0 = TradeLine(1.8000, np.nan, 0, 0, cur, None)
-    tl01 = TradeLine(1.8000, np.nan, 0, 0, cur, None)
-    tl1 = TradeLine(1.8000, 1.7980, -20, 0.005, cur, None)
-    # t21 = TradeLine(1.8030, 1.8000, -30, 0.01, cur, None)
-    t21 = TradeLine(1.8030, 1.8000, -30, 0.01, cur, None)
-    t31 = TradeLine(1.8080, 1.8000, -30, -0.03, cur, None)
-    line_dem = [tl0, tl01, tl1, t21, t31]
-    cap1 = 10000
-
-    dff = pd.DataFrame(index=pd.date_range('2012-01-01', '2012-01-05'), data=line_dem, columns=[cur])
-    bt = Backtester.backtest(cap1, dff)
-
-    strat = StrengthMomentum(lookback=2)
-    dp = FREDDataProvider()
-    my_bt = Backtester(dp,strat)
-    result = my_bt.full_backtest(10000, ('2006-01-01', time.strftime("%c")))
-
-    h = run_algo(lookback=1, max_risk=0.1, date_boundaries = ('2006-01-01', time.strftime("%c")))
-    captial = 10000
-    bf_result = Backtester.backtest(captial, h.trade_details)
-    plot_data(bf_result.PnL)
