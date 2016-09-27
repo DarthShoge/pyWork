@@ -23,15 +23,36 @@ class Direction(Enum):
 
 
 class FREDDataProvider(DataProvider):
-    def __init__(self):
+    def __init__(self, use_exotics = False):
 
-        self.major_codes = {'EURUSD': 'DEXUSEU',
-                            'AUDUSD': 'DEXUSAL',
-                            'USDJPY': 'DEXJPUS',
-                            'USDCAD': 'DEXCAUS',
-                            'GBPUSD': 'DEXUSUK',
-                            'NZDUSD': 'DEXUSNZ',
-                            'USDCHF': 'DEXSZUS'}
+        self.currencies = self.majors()
+        if use_exotics :
+            self.currencies.update(self.exotics())
+
+    @staticmethod
+    def majors():
+        return {'EURUSD': 'DEXUSEU',
+                'AUDUSD': 'DEXUSAL',
+                'USDJPY': 'DEXJPUS',
+                'USDCAD': 'DEXCAUS',
+                'GBPUSD': 'DEXUSUK',
+                'NZDUSD': 'DEXUSNZ',
+                'USDCHF': 'DEXSZUS'}
+
+    @staticmethod
+    def exotics():
+        return {'USDBRL': 'DEXBZUS',
+                'USDCNY': 'DEXCHUS',
+                'USDCNY': 'DEXCHUS',
+                'USDDKK': 'DEXDNUS',
+                'USDHKD': 'DEXHKUS',
+                'USDINR': 'DEXINUS',
+                'USDMXN': 'DEXMXUS',
+                'USDTWD': 'DEXTAUS',
+                'USDNOK': 'DEXNOUS',
+                'USDSGD': 'DEXSIUS',
+                'USDSEK': 'DEXSDUS',
+                }
 
     def get_rate(self, currency):
         '''
@@ -39,14 +60,14 @@ class FREDDataProvider(DataProvider):
         >>> get_rate('DEXUSEU')
         AUDUSD dataframe
         '''
-        cur_code = self.major_codes[currency]
+        cur_code = self.currencies[currency]
         currency_df = qdl.get('FRED/' + cur_code)
         currency_df.rename(columns={'VALUE': currency}, inplace=True)
         return currency_df
 
     def get_rates(self):
         holding_dfs = []
-        for code in self.major_codes.keys():
+        for code in self.currencies.keys():
             holding_dfs.append(self.get_rate(code))
 
         index_cur_df = holding_dfs[0]
@@ -74,7 +95,7 @@ class TradeLine():
 
 
 class Transaction:
-    def __init__(self, trade_details, capital):
+    def __init__(self, trade_details, capital, spread=0, commission_per_k=0):
         self.pip_value = 0.1
         self.__historic_pnl = []
         self.pnl = 0

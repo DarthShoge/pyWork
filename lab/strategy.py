@@ -2,7 +2,7 @@ from abc import ABCMeta, abstractmethod
 
 import numpy as np
 
-from core import calc_real_risk, get_pips, get_currency_pair_tuple, get_relative_returns, get_rolling_weighted_returns, \
+from lab.core import calc_real_risk, get_pips, get_currency_pair_tuple, get_relative_returns, get_rolling_weighted_returns, \
     calc_expected_prc_pos, convert_to_natural_pair_df, price_data_to_trade_lines
 
 
@@ -72,3 +72,7 @@ class StrengthMomentum(Strategy):
                                                              diagnostic.stop_pips_df)
 
         return diagnostic
+
+def calculate_sharpe_ratio(returns, risk_free_rate) :
+    return returns
+
