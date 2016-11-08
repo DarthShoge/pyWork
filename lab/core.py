@@ -9,6 +9,9 @@ import quandl as qdl
 qdl.ApiConfig.api_key = '61oas6mNaNKgDAh27k1x'
 
 
+class InitError(Exception): pass
+
+
 class DataProvider(object):
     __metaclass__ = ABCMeta
 
@@ -23,10 +26,10 @@ class Direction(Enum):
 
 
 class FREDDataProvider(DataProvider):
-    def __init__(self, use_exotics = False):
+    def __init__(self, use_exotics=False):
 
         self.currencies = self.majors()
-        if use_exotics :
+        if use_exotics:
             self.currencies.update(self.exotics())
 
     @staticmethod
@@ -95,36 +98,51 @@ class TradeLine():
 
 
 class Transaction:
-    def __init__(self, trade_details, capital, spread=0, commission_per_k=0):
+    def __init__(self, trade_details, capital, spread=0, commission_per_k=0.0):
         self.pip_value = 0.1
-        self.__historic_pnl = []
-        self.pnl = 0
+        self.historic_pnl = []
+        self.commission_per_k = commission_per_k
         self.trade_details = trade_details
         self.risk = trade_details.risk
         self.last_observed_price = trade_details.price
         self.direction = Direction.Long if trade_details.risk > 0 else Direction.Short
         fill_details = self.calc_position_size_in_k(capital)
         self.position_sz = fill_details[0]
+        self.pnl = -self.calculate_transaction_cost() * 2
+        # We Calculate transaction costs for getting in and out upfront
         self.true_stop_pips = fill_details[1]
+        self.validate_construction()
+
+    def calculate_transaction_cost(self, position_to_close=None):
+        position_to_close = self.position_sz if position_to_close is None else position_to_close
+        return self.commission_per_k * abs(position_to_close)
+
+    def validate_construction(self):
+        if self.direction is Direction.Long and (
+                    self.trade_details.price < self.trade_details.stop) or self.direction is Direction.Short and (
+                    self.trade_details.price > self.trade_details.stop):
+            raise InitError("Transaction inconsistent Dir:%s P:%s S:%s" % (
+                self.direction, self.trade_details.price, self.trade_details.stop))
 
     def is_closed(self):
         return self.risk == 0
 
     @property
     def pnl(self):
-        return self.__historic_pnl[-1]
+        return self.historic_pnl[-1]
 
     @pnl.setter
     def pnl(self, value):
-        self.__historic_pnl.append(value)
+        self.historic_pnl.append(value)
 
     '''Assumption: price has no spread. Usage: to use potion size we say that if position size
     of 50k is worked out then for each pip move we make/lose 5 or 50*0.1'''
 
     def calc_position_size_in_k(self, capital, trade_friction_func=lambda x: x):
-        if self.trade_details.price == self.trade_details.stop:
+        if self.trade_details.price == self.trade_details.stop or capital < 0:
             return 0, 0
 
+        # direction_multiplier = 1 if self.direction is Direction.Long else -1
         friction_pips = trade_friction_func(self.trade_details.stop_pips)
         position_size_in_k = (capital * self.risk) / (abs(friction_pips) * self.pip_value)
         return (round(position_size_in_k, 0), friction_pips)
@@ -133,12 +151,12 @@ class Transaction:
         return "p: %s k: %s pnl: %s r:%s" % (
             self.trade_details.price, self.position_sz, self.pnl, self.risk)
 
-    def value_since_last_observation(self, price, delta_price=np.NaN, position_sz=np.NaN):
-        position_sz = self.position_sz if np.isnan(position_sz) else position_sz
+    def value_since_last_observation(self, price, delta_price=np.NaN, position_nominal=np.NaN):
+        position_nominal = self.position_sz if np.isnan(position_nominal) else position_nominal
         delta_price = self.last_observed_price if np.isnan(delta_price) else delta_price
         price_difference = price - delta_price
         pip_difference = get_pips(price_difference, self.trade_details.currency)
-        return pip_difference * position_sz * self.pip_value
+        return pip_difference * position_nominal * self.pip_value
 
     def close_transaction(self, price, risk_to_close=np.NaN):
 
@@ -149,18 +167,24 @@ class Transaction:
             risk_to_close) else risk_to_close
         position_sz_to_close = (risk_to_close / self.risk) * self.position_sz
 
+        self.validate_close(risk_to_close)
+
+        pnl_to_close = self.value_since_last_observation(price, self.trade_details.price, -position_sz_to_close)
+        # pnl_to_close -= self.calculate_transaction_cost(position_sz_to_close)
+        self.pnl = pnl_to_close
+        self.position_sz += position_sz_to_close
+        self.risk += risk_to_close
+        return self.pnl
+
+    def validate_close(self, risk_to_close):
         if self.direction is Direction.Short and risk_to_close < 0 or \
                                 self.direction is Direction.Long and risk_to_close > 0:
             raise RuntimeError(
                 'Currency %s Cannot close out %s trade for %s risk on date %s with risk %s' %
                 (self.trade_details.currency, self.direction, risk_to_close, self.trade_details.trade_date, self.risk))
-
-        pnl_from_inception = sum(self.__historic_pnl)
-        pnl_to_close = self.value_since_last_observation(price, self.trade_details.price, -position_sz_to_close)
-        self.pnl = pnl_to_close
-        self.position_sz += position_sz_to_close
-        self.risk += risk_to_close
-        return self.pnl
+        if abs(risk_to_close) > abs(self.risk):
+            raise RuntimeError('Currency: %s on date %s Cannot over run risk' %
+                               (self.trade_details.currency, self.trade_details.trade_date))
 
     @abstractmethod
     def no_friction(self, x):
@@ -168,12 +192,13 @@ class Transaction:
 
 
 class Position:
-    def __init__(self, initiating_line, capital):
+    def __init__(self, initiating_line, capital, commission_per_k=0.0):
         if initiating_line.risk == 0:
             raise LookupError('cannot initiate holding with no risk')
 
-        as_pnl = Transaction(initiating_line, capital)
+        as_pnl = Transaction(initiating_line, capital, commission_per_k=commission_per_k)
         self.lines = [as_pnl]
+        self.commission_per_k = commission_per_k
         self.pnl_history = [0]
         self.currency = initiating_line.currency
         # self.net_direction = as_pnl.direction
@@ -204,7 +229,7 @@ class Position:
         if trade_line.currency != self.currency:
             raise LookupError('Currencies do not match')
 
-        pnl_line = Transaction(trade_line, current_capital)
+        pnl_line = Transaction(trade_line, current_capital, commission_per_k= self.commission_per_k)
         locked_in_pnl = 0
         locked_in_pnl += self.close_stop_outs(trade_line.price)
 
@@ -215,7 +240,7 @@ class Position:
             while abs(residual_risk) > 0:
                 if not self.lines:
                     trade_line.risk = residual_risk
-                    pnl_line = Transaction(trade_line, current_capital)
+                    pnl_line = Transaction(trade_line, current_capital, commission_per_k= self.commission_per_k)
                     self.lines.append(pnl_line)
                     residual_risk = 0
                 else:
@@ -241,12 +266,12 @@ class Backtester:
         self.strategy = strategy
 
     @staticmethod
-    def calculate_position(current_holding, today, capital):
+    def calculate_position(current_holding, today, capital, commission_per_k):
         if np.isnan(today.stop): return current_holding
         today_has_risk = not np.isnan(today.risk) and today.risk != 0
 
         if current_holding is None and today_has_risk:
-            return Position(today, capital)
+            return Position(today, capital, commission_per_k)
 
         if current_holding is None and not today_has_risk:
             return None
@@ -255,7 +280,7 @@ class Backtester:
             return current_holding
 
     @staticmethod
-    def backtest(capital, trade_details_df):
+    def backtest(capital, trade_details_df, commission_per_k = 0.0):
         backtest_results_df = pd.DataFrame(index=trade_details_df.index.values, columns=trade_details_df.columns.values)
         backtest_results_df = backtest_results_df.where((pd.notnull(backtest_results_df)), None)
         last_t = trade_details_df.index.values[0]
@@ -266,7 +291,7 @@ class Backtester:
                 todays_details = trade_details_df.ix[t, currency]
                 current_position = backtest_results_df.ix[last_t, currency]
 
-                current_position = Backtester.calculate_position(current_position, todays_details, capital)
+                current_position = Backtester.calculate_position(current_position, todays_details, capital,commission_per_k)
 
                 if current_position is not None:
                     current_capital += current_position.pnl_history[-1]
@@ -277,12 +302,12 @@ class Backtester:
             last_t = t
         return backtest_results_df
 
-    def full_backtest(self, capital, date_range=None):
+    def full_backtest(self, capital, commission_per_k=0.0, date_range=None):
         rates = self.dataprovider.get_rates() if date_range is None else get_range(self.dataprovider.get_rates(),
                                                                                    date_range[0], date_range[1])
         trade_details = self.strategy.run(rates)
 
-        return self.backtest(capital, trade_details)
+        return self.backtest(capital, trade_details, commission_per_k)
 
 
 def get_currency_dataframe(cur):
@@ -435,5 +460,3 @@ def price_data_to_trade_lines(price_df, rolling_risk_df, stop_df, pips_df):
                            risk=rolling_risk_df.ix[i, c], currency=c, trade_date=i)
             trade_details_df.set_value(i, c, td)
     return trade_details_df
-
-

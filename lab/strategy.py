@@ -64,9 +64,9 @@ class StrengthMomentum(Strategy):
                                                                     diagnostic.theoretical_risk)
         diagnostic.rolling_risk = self.calc_rolling_risk(diagnostic.data_df, diagnostic.conventional_t_risk,
                                                          self.max_risk)
-        diagnostic.stop_price_df = self.stop_price_def(diagnostic.rolling_risk, diagnostic.data_df)
-        diagnostic.stop_pips_df = (diagnostic.stop_price_df - diagnostic.data_df).apply(get_pips).fillna(value=0)
         daily_risk = diagnostic.rolling_risk - diagnostic.rolling_risk.shift(1)
+        diagnostic.stop_price_df = self.stop_price_def(daily_risk, diagnostic.data_df)
+        diagnostic.stop_pips_df = (diagnostic.stop_price_df - diagnostic.data_df).apply(get_pips).fillna(value=0)
         daily_risk.fillna(0, inplace=True)
         diagnostic.trade_details = price_data_to_trade_lines(diagnostic.data_df, daily_risk, diagnostic.stop_price_df,
                                                              diagnostic.stop_pips_df)
