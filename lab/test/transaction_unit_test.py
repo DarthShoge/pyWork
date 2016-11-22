@@ -30,12 +30,12 @@ class TransactionUnitTests(unittest.TestCase):
         self.assertEqual(0,tran.pnl)
 
     def test_transaction_constructor_sets_position_sz_in_k_properly_for_long_positive_capital(self):
-        trade_details = TradeLine(1.500, 1.450, 50, 0.01, 'USDGBP', dt.date)
+        trade_details = TradeLine(1.500, 1.4950, 50, 0.01, 'USDGBP', dt.date)
         tran = Transaction(trade_details, 10000)
         self.assertEqual(20,tran.position_sz)
 
     def test_transaction_constructor_sets_position_sz_in_k_properly_for_short_positive_capital(self):
-        trade_details = TradeLine(1.500,1.550,50,-0.01,'USDGBP',dt.date)
+        trade_details = TradeLine(1.500,1.5050,50,-0.01,'USDGBP',dt.date)
         tran = Transaction(trade_details, 10000)
         self.assertEqual(-20, tran.position_sz)
 
@@ -60,13 +60,13 @@ class TransactionUnitTests(unittest.TestCase):
         self.assertEqual(0,tran.position_sz)
 
     def test_transaction_get_value_since_last_observation_calculates_difference_on_positive_long_move_without_delta(self):
-        trade_details = TradeLine(1.500, 1.450, 50, 0.01, 'USDGBP', dt.date)
+        trade_details = TradeLine(1.500, 1.4950, 50, 0.01, 'USDGBP', dt.date)
         tran = Transaction(trade_details, 10000)
         result = tran.value_since_last_observation(1.6)
         self.assertAlmostEquals(20.0*(1000*0.1), result,5)
 
     def test_transaction_get_value_since_last_observation_calculates_difference_on_positive_short_move_without_delta(self):
-        trade_details = TradeLine(1.500, 1.550, 50, -0.01, 'USDGBP', dt.date)
+        trade_details = TradeLine(1.5000, 1.5050, 50, -0.01, 'USDGBP', dt.date)
         tran = Transaction(trade_details, 10000)
         result = tran.value_since_last_observation(1.4950)
         self.assertAlmostEquals(20.0*(50*0.1), result)
@@ -194,3 +194,29 @@ class TransactionUnitTests(unittest.TestCase):
         tran.close_transaction(1.5050,-0.005)
         tran.close_transaction(1.5050,-0.005)
         self.assertAlmostEqual(expected_result, sum(tran.historic_pnl))
+
+    def test_transaction_spread_should_add_in_pips_to_exit_price_for_long(self):
+        trade_details = TradeLine(1.500, 1.4950, 50, 0.01, 'USDGBP', dt.date)
+        tran = Transaction(trade_details, 10000, spread=2.0)
+        result = tran.close_transaction(1.5050)
+        self.assertAlmostEquals(92, sum(tran.historic_pnl))
+
+    def test_transaction_spread_should_remove_in_pips_to_exit_price_for_short(self):
+        trade_details = TradeLine(1.500, 1.5050, 50, -0.01, 'USDGBP', dt.date)
+        tran = Transaction(trade_details, 10000, spread=2.0)
+        result = tran.close_transaction(1.4950)
+        self.assertAlmostEquals(92, sum(tran.historic_pnl))
+
+    def test_transaction_spread_should_not_affect_position_size(self):
+        trade_details = TradeLine(1.500, 1.4950, 50, 0.01, 'USDGBP', dt.date)
+        tran = Transaction(trade_details, 10000, spread=2.0)
+        self.assertAlmostEquals(20, tran.position_sz)
+
+    def test_transaction_spread_should_be_applied_on_both_entry_and_exit(self):
+        trade_details = TradeLine(1.5000, 1.5050, 50, -0.01, 'USDGBP', dt.date)
+        tran = Transaction(trade_details, 10000, spread=2.0)
+        result = tran.close_transaction(1.5000)
+        self.assertAlmostEquals(-8.00, sum(tran.historic_pnl))
+
+
+

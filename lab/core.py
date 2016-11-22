@@ -103,12 +103,17 @@ class Transaction:
         self.historic_pnl = []
         self.commission_per_k = commission_per_k
         self.trade_details = trade_details
+        self.spread = spread
         self.risk = trade_details.risk
         self.last_observed_price = trade_details.price
         self.direction = Direction.Long if trade_details.risk > 0 else Direction.Short
+        spread_as_price = as_price(spread,trade_details.currency)
+        self.fill_price = self.trade_details.price + (
+            -spread_as_price if self.direction is Direction.Long else spread_as_price)
         fill_details = self.calc_position_size_in_k(capital)
         self.position_sz = fill_details[0]
-        self.pnl = -self.calculate_transaction_cost() * 2
+        self.pnl = (-self.calculate_transaction_cost() * 2) + (
+            self.value_since_last_observation(self.fill_price, self.trade_details.price))
         # We Calculate transaction costs for getting in and out upfront
         self.true_stop_pips = fill_details[1]
         self.validate_construction()
@@ -143,7 +148,8 @@ class Transaction:
             return 0, 0
 
         # direction_multiplier = 1 if self.direction is Direction.Long else -1
-        friction_pips = trade_friction_func(self.trade_details.stop_pips)
+        stop_pips = get_pips(self.trade_details.price - self.trade_details.stop,self.trade_details.currency)
+        friction_pips = trade_friction_func(stop_pips)
         position_size_in_k = (capital * self.risk) / (abs(friction_pips) * self.pip_value)
         return (round(position_size_in_k, 0), friction_pips)
 
@@ -159,6 +165,9 @@ class Transaction:
         return pip_difference * position_nominal * self.pip_value
 
     def close_transaction(self, price, risk_to_close=np.NaN):
+        spread_as_price = as_price(self.spread, self.trade_details.currency)
+
+        fill_price = price + (-spread_as_price if self.direction is Direction.Long else spread_as_price)
 
         if self.risk == 0:
             return 0
@@ -169,7 +178,7 @@ class Transaction:
 
         self.validate_close(risk_to_close)
 
-        pnl_to_close = self.value_since_last_observation(price, self.trade_details.price, -position_sz_to_close)
+        pnl_to_close = self.value_since_last_observation(fill_price, self.trade_details.price, -position_sz_to_close)
         # pnl_to_close -= self.calculate_transaction_cost(position_sz_to_close)
         self.pnl = pnl_to_close
         self.position_sz += position_sz_to_close
@@ -229,7 +238,7 @@ class Position:
         if trade_line.currency != self.currency:
             raise LookupError('Currencies do not match')
 
-        pnl_line = Transaction(trade_line, current_capital, commission_per_k= self.commission_per_k)
+        pnl_line = Transaction(trade_line, current_capital, commission_per_k=self.commission_per_k)
         locked_in_pnl = 0
         locked_in_pnl += self.close_stop_outs(trade_line.price)
 
@@ -240,7 +249,7 @@ class Position:
             while abs(residual_risk) > 0:
                 if not self.lines:
                     trade_line.risk = residual_risk
-                    pnl_line = Transaction(trade_line, current_capital, commission_per_k= self.commission_per_k)
+                    pnl_line = Transaction(trade_line, current_capital, commission_per_k=self.commission_per_k)
                     self.lines.append(pnl_line)
                     residual_risk = 0
                 else:
@@ -280,7 +289,7 @@ class Backtester:
             return current_holding
 
     @staticmethod
-    def backtest(capital, trade_details_df, commission_per_k = 0.0):
+    def backtest(capital, trade_details_df, commission_per_k=0.0):
         backtest_results_df = pd.DataFrame(index=trade_details_df.index.values, columns=trade_details_df.columns.values)
         backtest_results_df = backtest_results_df.where((pd.notnull(backtest_results_df)), None)
         last_t = trade_details_df.index.values[0]
@@ -291,7 +300,8 @@ class Backtester:
                 todays_details = trade_details_df.ix[t, currency]
                 current_position = backtest_results_df.ix[last_t, currency]
 
-                current_position = Backtester.calculate_position(current_position, todays_details, capital,commission_per_k)
+                current_position = Backtester.calculate_position(current_position, todays_details, capital,
+                                                                 commission_per_k)
 
                 if current_position is not None:
                     current_capital += current_position.pnl_history[-1]
@@ -450,6 +460,18 @@ def get_pips(value, currency=None):
         return value * 100
     else:
         return value * 10000
+
+
+def as_price(value, currency=None):
+    if value == 0:
+        return 0.0
+
+    currency = currency if currency else value.name
+    trade, contra = get_currency_pair_tuple(currency)
+    if contra == 'JPY':
+        return value / 100
+    else:
+        return value / 10000
 
 
 def price_data_to_trade_lines(price_df, rolling_risk_df, stop_df, pips_df):
