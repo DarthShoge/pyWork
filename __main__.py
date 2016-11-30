@@ -1,8 +1,6 @@
 import time
 import lab as lb
-import requests
 
-print(requests.get('http://www.yahoo.com'))
 
 if __name__ == "__main__":
     cap1 = 10000
@@ -15,5 +13,7 @@ if __name__ == "__main__":
     to_date = time.strftime("%c")
     # rates = lb.get_range(dp.get_rates(),from_date,'2011-02-20')
     # h = strat.run_with_diagnostics(rates)
-    result = my_bt.full_backtest(10000, commission_per_k=0.06,date_range=('2004-01-01', time.strftime("%c")))
+    result = my_bt.full_backtest(10000, date_range=('2004-01-01', time.strftime("%c")))
+    lb.plot_data(result.PnL)
+    result = my_bt.full_backtest(10000, date_range=('2004-01-01', time.strftime("%c")), use_spread=False)
     lb.plot_data(result.PnL)

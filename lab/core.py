@@ -201,26 +201,21 @@ class Transaction:
 
 
 class Position:
-    def __init__(self, initiating_line, capital, commission_per_k=0.0):
+    def __init__(self, initiating_line, capital, commission_per_k=0.0, spread=0.0):
         if initiating_line.risk == 0:
             raise LookupError('cannot initiate holding with no risk')
 
-        as_pnl = Transaction(initiating_line, capital, commission_per_k=commission_per_k)
-        self.lines = [as_pnl]
+        trsction = Transaction(initiating_line, capital, commission_per_k=commission_per_k,spread=spread)
+        self.lines = [trsction]
         self.commission_per_k = commission_per_k
+        self.spread = spread
         self.pnl_history = [0]
         self.currency = initiating_line.currency
-        # self.net_direction = as_pnl.direction
-
-    def is_closed(self):
-        return True if self.line else False
+        # self.net_direction = trsction.direction
 
     @property
     def net_direction(self):
         return None if not self.lines else self.lines[-1].direction
-
-    def value_since_last_observation(self, price):
-        return sum([pl.value_since_last_observation(price, pl.trade_details.price) for pl in self.lines])
 
     def close_stop_outs(self, price):
         running_pnl = 0
@@ -238,18 +233,20 @@ class Position:
         if trade_line.currency != self.currency:
             raise LookupError('Currencies do not match')
 
-        pnl_line = Transaction(trade_line, current_capital, commission_per_k=self.commission_per_k)
+        pnl_line = Transaction(trade_line, current_capital, commission_per_k=self.commission_per_k, spread=self.spread)
         locked_in_pnl = 0
         locked_in_pnl += self.close_stop_outs(trade_line.price)
 
-        if self.net_direction is None or self.net_direction == pnl_line.direction:
+        if abs(pnl_line.risk) > 0 and (self.net_direction is None or self.net_direction == pnl_line.direction):
+            locked_in_pnl = pnl_line.pnl
             self.lines.append(pnl_line)
         else:
             residual_risk = trade_line.risk
             while abs(residual_risk) > 0:
                 if not self.lines:
                     trade_line.risk = residual_risk
-                    pnl_line = Transaction(trade_line, current_capital, commission_per_k=self.commission_per_k)
+                    pnl_line = Transaction(trade_line, current_capital, commission_per_k=self.commission_per_k, spread=self.spread)
+                    locked_in_pnl += pnl_line.pnl
                     self.lines.append(pnl_line)
                     residual_risk = 0
                 else:
@@ -275,12 +272,27 @@ class Backtester:
         self.strategy = strategy
 
     @staticmethod
-    def calculate_position(current_holding, today, capital, commission_per_k):
+    def spread_map():
+        return {'EURUSD': 1.5, 'AUDUSD': 1.5, 'USDJPY': 1.7, 'USDCAD': 2.5, 'GBPUSD': 2.2,
+                'NZDUSD': 1.8, 'USDCHF': 2.0, 'USDBRL': 5.0, 'USDCNY': 8.0,
+                'USDDKK': 10.0, 'USDHKD': 4.0, 'USDINR': 10.5, 'USDMXN': 230.0, 'USDTWD': 10.0,
+                'USDNOK': 40.0, 'USDSGD': 3.8, 'USDSEK': 40.0}
+
+    @staticmethod
+    def get_spread(spread_map, currency):
+        if spread_map is None:
+            return 0.0
+        else:
+            return spread_map[currency]
+
+    @staticmethod
+    def calculate_position(current_holding, today, capital, commission_per_k, currency, spread_map=None):
+        spread = Backtester.get_spread(spread_map,currency)
         if np.isnan(today.stop): return current_holding
         today_has_risk = not np.isnan(today.risk) and today.risk != 0
 
         if current_holding is None and today_has_risk:
-            return Position(today, capital, commission_per_k)
+            return Position(today, capital, commission_per_k,spread)
 
         if current_holding is None and not today_has_risk:
             return None
@@ -289,7 +301,7 @@ class Backtester:
             return current_holding
 
     @staticmethod
-    def backtest(capital, trade_details_df, commission_per_k=0.0):
+    def backtest(capital, trade_details_df, commission_per_k=0.0, spread_map=None):
         backtest_results_df = pd.DataFrame(index=trade_details_df.index.values, columns=trade_details_df.columns.values)
         backtest_results_df = backtest_results_df.where((pd.notnull(backtest_results_df)), None)
         last_t = trade_details_df.index.values[0]
@@ -301,7 +313,7 @@ class Backtester:
                 current_position = backtest_results_df.ix[last_t, currency]
 
                 current_position = Backtester.calculate_position(current_position, todays_details, capital,
-                                                                 commission_per_k)
+                                                                 commission_per_k, currency, spread_map)
 
                 if current_position is not None:
                     current_capital += current_position.pnl_history[-1]
@@ -312,12 +324,14 @@ class Backtester:
             last_t = t
         return backtest_results_df
 
-    def full_backtest(self, capital, commission_per_k=0.0, date_range=None):
+    def full_backtest(self, capital, commission_per_k=0.0, date_range=None, use_spread=True):
         rates = self.dataprovider.get_rates() if date_range is None else get_range(self.dataprovider.get_rates(),
                                                                                    date_range[0], date_range[1])
         trade_details = self.strategy.run(rates)
 
-        return self.backtest(capital, trade_details, commission_per_k)
+        spread_map =  Backtester.spread_map() if use_spread else None
+
+        return self.backtest(capital, trade_details, commission_per_k,spread_map)
 
 
 def get_currency_dataframe(cur):
