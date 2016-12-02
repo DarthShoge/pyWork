@@ -1,6 +1,8 @@
-import unittest
 import datetime as dt
+import unittest
+
 from lab import *
+from lab import Transaction, Position
 
 
 class PositionUnitTests(unittest.TestCase):

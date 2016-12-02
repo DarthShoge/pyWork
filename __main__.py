@@ -1,7 +1,6 @@
 import time
 import lab as lb
 
-
 if __name__ == "__main__":
     cap1 = 10000
     strat = lb.StrengthMomentum(lookback=2,max_risk=0.1)

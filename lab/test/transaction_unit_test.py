@@ -1,6 +1,8 @@
 import datetime as dt
-from lab import *
 import unittest
+
+from lab import *
+from lab import Transaction
 
 
 class TransactionUnitTests(unittest.TestCase):

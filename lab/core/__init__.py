@@ -1,0 +1,1 @@
+from lab.core.dataprovider import FREDDataProvider
