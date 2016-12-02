@@ -84,12 +84,11 @@ class FREDDataProvider(DataProvider):
         return index_cur_df
 
 
-class TradeLine():
-    def __init__(self, price, stop, stop_pips, risk, currency, trade_date):
+class TradeInstruction:
+    def __init__(self, price, stop, risk, currency, trade_date):
         self.currency = currency
         self.price = price
         self.stop = stop
-        self.stop_pips = stop_pips
         self.risk = risk
         self.trade_date = trade_date
 
@@ -492,7 +491,7 @@ def price_data_to_trade_lines(price_df, rolling_risk_df, stop_df, pips_df):
     trade_details_df = pd.DataFrame(index=price_df.index.values, columns=price_df.columns.values)
     for i in trade_details_df.index.values:
         for c in trade_details_df.columns.values:
-            td = TradeLine(price=price_df.ix[i, c], stop=stop_df.ix[i, c], stop_pips=pips_df.ix[i, c],
-                           risk=rolling_risk_df.ix[i, c], currency=c, trade_date=i)
+            td = TradeInstruction(price=price_df.ix[i, c], stop=stop_df.ix[i, c], risk=rolling_risk_df.ix[i, c], currency=c,
+                                  trade_date=i)
             trade_details_df.set_value(i, c, td)
     return trade_details_df

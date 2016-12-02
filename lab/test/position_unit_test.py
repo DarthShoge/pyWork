@@ -5,7 +5,7 @@ from lab import *
 
 class PositionUnitTests(unittest.TestCase):
     def create_trade_line(self, price=1.500, stop=1.4950, risk=0.01, currency='USDGBP', date=dt.date):
-        return TradeLine(price, stop, 50, risk, currency, date)
+        return TradeInstruction(price, stop, risk, currency, date)
 
     def create_transaction(self, price=1.500, stop=1.4950, risk=0.01, currency='USDGBP', date=dt.date, spread=0):
         trade_details = self.create_trade_line(price, stop, risk, currency, date)
