@@ -1,4 +1,5 @@
-from lab.core.core import InitError, TradeInstruction, Direction, plot_data,get_pips,get_range,as_price
+from lab.core.common import plot_data,get_pips,get_range,as_price
+from lab.core.structures import InitError, Direction, TradeInstruction
 from lab.core.position import Position
 from lab.core.backtester import Backtester
 from lab.core.transaction import Transaction

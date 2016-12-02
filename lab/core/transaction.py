@@ -2,7 +2,8 @@ from abc import abstractmethod
 
 import numpy as np
 
-from lab import Direction, InitError, get_pips, as_price
+from lab import InitError, get_pips, as_price
+from lab.core.structures import Direction
 
 
 class Transaction:

@@ -1,8 +1,8 @@
 import datetime as dt
 import unittest
 
-from lab import *
 from lab import Transaction, Position
+from lab.core.structures import Direction, TradeInstruction
 
 
 class PositionUnitTests(unittest.TestCase):

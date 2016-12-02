@@ -1,4 +1,4 @@
-from lab.core.core import Direction
+from lab.core.structures import Direction
 from lab.core.transaction import Transaction
 
 
