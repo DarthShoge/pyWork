@@ -8,6 +8,7 @@ class Backtester:
     def __init__(self, dataprovider, strategy):
         self.dataprovider = dataprovider
         self.strategy = strategy
+        self.position_pnls = []
 
     @staticmethod
     def spread_map():

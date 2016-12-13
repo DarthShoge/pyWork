@@ -4,6 +4,7 @@ import numpy as np
 
 from lab import InitError, get_pips, as_price
 from lab.core.structures import Direction
+from lab.core.pnl_line import PnlLine, ExitType
 
 
 class Transaction:
@@ -13,10 +14,11 @@ class Transaction:
         self.commission_per_k = commission_per_k
         self.trade_details = trade_details
         self.spread = spread
+        self.statistic_pnl = PnlLine(opening_trade=trade_details)
         self.risk = trade_details.risk
         self.last_observed_price = trade_details.price
         self.direction = Direction.Long if trade_details.risk > 0 else Direction.Short
-        spread_as_price = as_price(spread,trade_details.currency)
+        spread_as_price = as_price(spread, trade_details.currency)
         self.fill_price = self.trade_details.price + (
             -spread_as_price if self.direction is Direction.Long else spread_as_price)
         fill_details = self.calc_position_size_in_k(capital)
@@ -48,6 +50,7 @@ class Transaction:
     @pnl.setter
     def pnl(self, value):
         self.historic_pnl.append(value)
+        self.statistic_pnl.pnl = sum(self.historic_pnl)
 
     '''Assumption: price has no spread. Usage: to use potion size we say that if position size
     of 50k is worked out then for each pip move we make/lose 5 or 50*0.1'''
@@ -57,7 +60,7 @@ class Transaction:
             return 0, 0
 
         # direction_multiplier = 1 if self.direction is Direction.Long else -1
-        stop_pips = get_pips(self.trade_details.price - self.trade_details.stop,self.trade_details.currency)
+        stop_pips = get_pips(self.trade_details.price - self.trade_details.stop, self.trade_details.currency)
         friction_pips = trade_friction_func(stop_pips)
         position_size_in_k = (capital * self.risk) / (abs(friction_pips) * self.pip_value)
         return (round(position_size_in_k, 0), friction_pips)
@@ -73,7 +76,7 @@ class Transaction:
         pip_difference = get_pips(price_difference, self.trade_details.currency)
         return pip_difference * position_nominal * self.pip_value
 
-    def close_transaction(self, price, risk_to_close=np.NaN):
+    def close_transaction(self, price, risk_to_close=np.NaN, date=None):
         spread_as_price = as_price(self.spread, self.trade_details.currency)
 
         fill_price = price + (-spread_as_price if self.direction is Direction.Long else spread_as_price)
@@ -92,7 +95,17 @@ class Transaction:
         self.pnl = pnl_to_close
         self.position_sz += position_sz_to_close
         self.risk += risk_to_close
+
+        self.set_pnl_values(date, price)
+
         return self.pnl
+
+    def set_pnl_values(self, date, price):
+        self.statistic_pnl.exit_type = ExitType.Stopped if (
+            self.direction is Direction.Short and price >= self.trade_details.stop) or \
+                        (self.direction is Direction.Long and price <= self.trade_details.stop) else ExitType.Closed
+        self.statistic_pnl.to_date = date
+        self.statistic_pnl.close_price = price
 
     def validate_close(self, risk_to_close):
         if self.direction is Direction.Short and risk_to_close < 0 or \

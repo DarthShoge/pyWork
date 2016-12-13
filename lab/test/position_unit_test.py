@@ -73,6 +73,13 @@ class PositionUnitTests(unittest.TestCase):
         position.revalue_position(trade_instructions, 10000)
         self.assertAlmostEqual(-100, position.pnl_history[-1])
 
+    def test_revalue_position_should_close_stop_outs_are_triggered_at_spread_minus_stop(self):
+        transaction = self.create_transaction(price=1.5,stop=1.5050,risk=-0.01)
+        position = Position(transaction.trade_details, 10000, spread=2.0)
+        trade_instructions = self.create_trade_line(price=1.5048,stop=1.5070,risk=0)
+        position.revalue_position(trade_instructions, 10000)
+        self.assertAlmostEqual(-104, position.pnl_history[-1])
+
     def test_revalue_position_should_add_position_if_there_is_risk(self):
         transaction = self.create_transaction(price=1.5,stop=1.5050,risk=-0.01)
         position = Position(transaction.trade_details, 10000)
@@ -93,6 +100,22 @@ class PositionUnitTests(unittest.TestCase):
         trade_instructions = self.create_trade_line(price=1.4990,stop=1.4950,risk=0.005)
         position.revalue_position(trade_instructions, 10000)
         self.assertAlmostEqual(-0.005, position.lines[0].risk)
+
+    def test_revalue_position_full_close_out_should_capture_transaction_statistic_pnl(self):
+        transaction = self.create_transaction(price=1.5,stop=1.5050,risk=-0.01)
+        position = Position(transaction.trade_details, 10000)
+        trade_instructions = self.create_trade_line(price=1.4990,stop=1.4950,risk=0.01)
+        position.revalue_position(trade_instructions, 10000)
+        self.assertEqual(1, position.transaction_pnls.__len__())
+        self.assertAlmostEqual(20, position.transaction_pnls[0].pnl)
+
+    def test_revalue_position_stop_out_should_capture_transaction_statistic_pnl(self):
+        transaction = self.create_transaction(price=1.5,stop=1.5050,risk=-0.01)
+        position = Position(transaction.trade_details, 10000)
+        trade_instructions = self.create_trade_line(price=1.5050,stop=1.5025,risk=0.01)
+        position.revalue_position(trade_instructions, 10000)
+        self.assertEqual(1, position.transaction_pnls.__len__())
+        self.assertAlmostEqual(-100, position.transaction_pnls[0].pnl)
 
     def test_revalue_position_partial_close_out_should_set_pnl_correctly(self):
         transaction = self.create_transaction(price=1.5,stop=1.5050,risk=-0.01)

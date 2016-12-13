@@ -1,5 +1,6 @@
 from lab.core.structures import Direction
 from lab.core.transaction import Transaction
+from lab.core.common import as_price
 
 
 class Position:
@@ -12,22 +13,22 @@ class Position:
         self.commission_per_k = commission_per_k
         self.spread = spread
         self.pnl_history = [0]
+        self.transaction_pnls = []
         self.currency = initiating_line.currency
-        # self.net_direction = trsction.direction
 
     @property
     def net_direction(self):
         return None if not self.lines else self.lines[-1].direction
 
-    def close_stop_outs(self, price):
+    def close_stop_outs(self, trade_line):
+        price = trade_line.price
         running_pnl = 0
         for line in self.lines:
-            short_stopped_out = line.direction is Direction.Short and price > line.trade_details.stop
-            long_stopped_out = line.direction is Direction.Long and price < line.trade_details.stop
+            spread_price = as_price(line.spread, trade_line.currency)
+            short_stopped_out = line.direction is Direction.Short and price + spread_price >= line.trade_details.stop
+            long_stopped_out = line.direction is Direction.Long and price - spread_price <= line.trade_details.stop
             if short_stopped_out or long_stopped_out:
-                line.pnl = line.value_since_last_observation(line.trade_details.stop, line.trade_details.price)
-                line.risk = 0
-                running_pnl += line.pnl
+                running_pnl += line.close_transaction(line.trade_details.stop, date=trade_line.trade_date) #maybe we should use spread + price here
         return running_pnl
 
     def revalue_position(self, trade_line, current_capital):
@@ -37,7 +38,7 @@ class Position:
 
         pnl_line = Transaction(trade_line, current_capital, commission_per_k=self.commission_per_k, spread=self.spread)
         locked_in_pnl = 0
-        locked_in_pnl += self.close_stop_outs(trade_line.price)
+        locked_in_pnl += self.close_stop_outs(trade_line)
 
         if abs(pnl_line.risk) > 0 and (self.net_direction is None or self.net_direction == pnl_line.direction):
             locked_in_pnl = pnl_line.pnl
@@ -56,13 +57,17 @@ class Position:
                         # fully close out the trade else partially close out
                         if abs(residual_risk) > abs(line.risk):
                             residual_risk += line.risk
-                            locked_in_pnl += line.close_transaction(price=trade_line.price)
-                            self.lines.remove(line)
+                            locked_in_pnl += line.close_transaction(price=trade_line.price,date=trade_line.trade_date)
+                            self.close_transaction(line)
                         else:
-                            locked_in_pnl += line.close_transaction(trade_line.price, residual_risk)
+                            locked_in_pnl += line.close_transaction(trade_line.price, residual_risk, trade_line.trade_date)
                             if line.risk == 0:
-                                self.lines.remove(line)
+                                self.close_transaction(line)
                             residual_risk = 0
 
         self.pnl_history.append(locked_in_pnl)
         return locked_in_pnl
+
+    def close_transaction(self, line):
+        self.lines.remove(line)
+        self.transaction_pnls.append(line.statistic_pnl)
