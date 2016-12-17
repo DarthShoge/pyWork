@@ -1,4 +1,5 @@
 from abc import ABCMeta, abstractmethod
+from lab.core.structures import Ohlc
 
 import quandl as qdl
 
@@ -52,6 +53,7 @@ class FREDDataProvider(DataProvider):
         '''
         cur_code = self.currencies[currency]
         currency_df = qdl.get('FRED/' + cur_code)
+        currency_df = currency_df.applymap(lambda x: Ohlc(x, x, x, x))
         currency_df.rename(columns={'VALUE': currency}, inplace=True)
         return currency_df
 
