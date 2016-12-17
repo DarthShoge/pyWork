@@ -1,2 +1,2 @@
-from lab.test.transaction_unit_test import TransactionUnitTests
-from lab.test.position_unit_test import PositionUnitTests
+from lab.test.test_transaction import TransactionUnitTests
+from lab.test.test_position import PositionUnitTests

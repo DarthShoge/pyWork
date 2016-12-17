@@ -22,7 +22,8 @@ class PnlLine:
         self.close_price = close_price
         self.exit_type = ExitType.Closed
         self.__pnl__ = pnl
-        self.returns = np.NaN if initial_capital is np.NaN else pnl / initial_capital
+        if pnl != 0 and initial_capital != 0:
+            self.returns = np.NaN if initial_capital is np.NaN else pnl / initial_capital
 
     @property
     def pnl(self):
@@ -31,7 +32,8 @@ class PnlLine:
     @pnl.setter
     def pnl(self, value):
         self.__pnl__ = value
-        self.returns = np.NaN if self.initial_capital is np.NaN else value / self.initial_capital
+        if value != 0 and self.initial_capital != 0:
+            self.returns = np.NaN if self.initial_capital is np.NaN else value / self.initial_capital
 
     def __add__(self, other):
         if self.currency != other.currency:
