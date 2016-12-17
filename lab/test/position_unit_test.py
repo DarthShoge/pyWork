@@ -170,6 +170,14 @@ class PositionUnitTests(unittest.TestCase):
         position.revalue_position(trade_instructions, 10000)
         self.assertAlmostEqual(0.005, position.lines[0].risk)
 
+    def test_revalue_position_stop_close_out_should_add_transaction_pnl(self):
+        transaction = self.create_transaction(price=1.5,stop=1.5050,risk=-0.01)
+        position = Position(transaction.trade_details, 10000)
+        trade_instructions = self.create_trade_line(price=1.5050,stop=1.4950,risk=0.01)
+        position.revalue_position(trade_instructions, 10000)
+        self.assertTrue(position.transaction_pnls[0])
+        self.assertAlmostEqual(-100, position.transaction_pnls[0].pnl)
+
 
 
 

@@ -45,6 +45,7 @@ class Backtester:
         backtest_results_df = backtest_results_df.where((pd.notnull(backtest_results_df)), None)
         last_t = trade_details_df.index.values[0]
         backtest_results_df.set_value(last_t, 'PnL', capital)
+        pnl_breakdown = []
         for t in trade_details_df.index.values[1:]:
             current_capital = backtest_results_df.ix[last_t, 'PnL']
             for currency in trade_details_df.columns.values:
@@ -56,18 +57,22 @@ class Backtester:
 
                 if current_position is not None:
                     current_capital += current_position.pnl_history[-1]
+                    if abs(sum([x.risk for x in current_position.lines])) == 0:
+                        pnl_breakdown.append(current_position.summary_pnl)
+                        current_position = None
 
                 backtest_results_df.set_value(t, currency, current_position)
 
             backtest_results_df.set_value(t, 'PnL', current_capital)
+            capital = current_capital
             last_t = t
-        return backtest_results_df
+        return (backtest_results_df, pnl_breakdown)
 
     def full_backtest(self, capital, commission_per_k=0.0, date_range=None, use_spread=True):
         rates = self.dataprovider.get_rates() if date_range is None else get_range(self.dataprovider.get_rates(),
                                                                                    date_range[0], date_range[1])
         trade_details = self.strategy.run(rates)
 
-        spread_map =  Backtester.spread_map() if use_spread else None
+        spread_map = Backtester.spread_map() if use_spread else None
 
         return self.backtest(capital, trade_details, commission_per_k,spread_map)

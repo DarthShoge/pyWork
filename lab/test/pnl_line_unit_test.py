@@ -1,6 +1,7 @@
 import unittest
 from lab import PnlLine, ExitType, TradeInstruction
 import datetime as dt
+from numpy import NaN, isnan
 
 
 class PnlLineUnitTests(unittest.TestCase):
@@ -137,3 +138,28 @@ class PnlLineUnitTests(unittest.TestCase):
         pnl1 = PnlLine(opening_trade=t, close_price=1.2, pnl=1000, to_date=to_date)
         result = PnlLine.sum([pnl1])
         self.assertEqual(result, pnl1)
+
+    def test_pnl_line_should_return_nan_return_if_no_initial_capital_is_imputted(self):
+        t = TradeInstruction(currency="EURUSD", price=1.1000, stop=1.0090, risk=0.01, trade_date=dt.date(2014, 10, 10))
+        pnl1 = PnlLine(opening_trade=t, close_price=1.2, pnl=1000, to_date=dt.date(2014, 10, 20))
+        self.assertTrue(isnan(pnl1.returns))
+
+    def test_pnl_line_should_correctly_calculate_returns_properly(self):
+        t = TradeInstruction(currency="EURUSD", price=1.1000, stop=1.0090, risk=0.01, trade_date=dt.date(2014, 10, 10))
+        pnl1 = PnlLine(opening_trade=t, close_price=1.2, pnl=1000, to_date=dt.date(2014, 10, 20), initial_capital=10000)
+        self.assertAlmostEqual(0.1, pnl1.returns)
+
+    def test_add_pnl_lines_should_use_earliest_initial_capital_value_in_sum(self):
+        t = TradeInstruction(currency="EURUSD", price=1.1000, stop=1.0090, risk=0.01,
+                             trade_date=dt.date(2014, 10, 10))
+        initial_capital = 10000
+        to_date = t.trade_date + dt.timedelta(days=15)
+        t2 = TradeInstruction(currency="EURUSD", price=1.1100, stop=1.1050, risk=0.01, trade_date=to_date)
+        close_price = 1.110
+        pnl1 = PnlLine(opening_trade=t, close_price=close_price, pnl=1000, to_date=to_date, initial_capital=initial_capital)
+        pnl2 = PnlLine(opening_trade=t2, close_price=1200, pnl=1000, to_date=to_date + dt.timedelta(days=15), initial_capital=initial_capital*10)
+        result = pnl1 + pnl2
+        result2 = pnl2 + pnl1
+        self.assertEqual(0.2, result.returns)
+        self.assertEqual(0.2, result2.returns)
+

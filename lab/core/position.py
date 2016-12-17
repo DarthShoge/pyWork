@@ -1,5 +1,6 @@
 from lab.core.structures import Direction
 from lab.core.transaction import Transaction
+from lab.core.pnl_line import PnlLine
 from lab.core.common import as_price
 
 
@@ -20,6 +21,10 @@ class Position:
     def net_direction(self):
         return None if not self.lines else self.lines[-1].direction
 
+    @property
+    def summary_pnl(self):
+        return PnlLine.sum([x for x in self.transaction_pnls])
+
     def close_stop_outs(self, trade_line):
         price = trade_line.price
         running_pnl = 0
@@ -29,6 +34,7 @@ class Position:
             long_stopped_out = line.direction is Direction.Long and price - spread_price <= line.trade_details.stop
             if short_stopped_out or long_stopped_out:
                 running_pnl += line.close_transaction(line.trade_details.stop, date=trade_line.trade_date) #maybe we should use spread + price here
+                self.close_transaction(line)
         return running_pnl
 
     def revalue_position(self, trade_line, current_capital):
@@ -41,7 +47,7 @@ class Position:
         locked_in_pnl += self.close_stop_outs(trade_line)
 
         if abs(pnl_line.risk) > 0 and (self.net_direction is None or self.net_direction == pnl_line.direction):
-            locked_in_pnl = pnl_line.pnl
+            locked_in_pnl += pnl_line.pnl
             self.lines.append(pnl_line)
         else:
             residual_risk = trade_line.risk
@@ -70,4 +76,4 @@ class Position:
 
     def close_transaction(self, line):
         self.lines.remove(line)
-        self.transaction_pnls.append(line.statistic_pnl)
+        self.transaction_pnls.append(line.summary_pnl)

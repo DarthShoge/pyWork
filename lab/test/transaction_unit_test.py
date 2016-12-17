@@ -223,51 +223,51 @@ class TransactionUnitTests(unittest.TestCase):
     def test__when_transaction_value_is_intitialised_statistic_pnl_line_should_properly_init(self):
         trade_details = TradeInstruction(1.500, 1.5050, -0.01, 'USDGBP', dt.date)
         tran = Transaction(trade_details, 10000)
-        self.assertEqual(trade_details.trade_date, tran.statistic_pnl.from_date)
-        self.assertEqual(trade_details.currency, tran.statistic_pnl.currency)
-        self.assertEqual(trade_details.price, tran.statistic_pnl.open_price)
+        self.assertEqual(trade_details.trade_date, tran.summary_pnl.from_date)
+        self.assertEqual(trade_details.currency, tran.summary_pnl.currency)
+        self.assertEqual(trade_details.price, tran.summary_pnl.open_price)
 
     def test__when_transaction_closed_statistic_pnl_line_should_set_correct_exit_type_on_close(self):
         trade_details = TradeInstruction(1.500, 1.5050, -0.01, 'USDGBP', dt.date)
         tran = Transaction(trade_details, 10000)
         result = tran.close_transaction(1.4950)
         self.assertAlmostEqual(100, result)
-        self.assertEqual(ExitType.Closed, tran.statistic_pnl.exit_type)
+        self.assertEqual(ExitType.Closed, tran.summary_pnl.exit_type)
 
     def test__when_transaction_closed_statistic_pnl_line_should_set_correct_date(self):
         trade_details = TradeInstruction(1.500, 1.5050, -0.01, 'USDGBP', dt.date(2015, 1, 1))
         tran = Transaction(trade_details, 10000)
         end_date = dt.date(2015, 10, 1)
         result = tran.close_transaction(price=1.4950, date=end_date)
-        self.assertAlmostEqual(end_date, tran.statistic_pnl.to_date)
+        self.assertAlmostEqual(end_date, tran.summary_pnl.to_date)
 
     def test__when_transaction_closed_statistic_pnl_line_should_set_correct_date(self):
         trade_details = TradeInstruction(1.500, 1.5050, -0.01, 'USDGBP', dt.date(2015, 1, 1))
         tran = Transaction(trade_details, 10000)
         end_date = dt.date(2015, 10, 1)
         result = tran.close_transaction(price=1.4950, date=end_date)
-        self.assertAlmostEqual(end_date, tran.statistic_pnl.to_date)
+        self.assertAlmostEqual(end_date, tran.summary_pnl.to_date)
 
     def test__when_transaction_closed_statistic_pnl_line_should_set_correct_pnl_and_close_price(self):
         trade_details = TradeInstruction(1.500, 1.5050, -0.01, 'USDGBP', dt.date(2015, 1, 1))
         tran = Transaction(trade_details, 10000,spread=2.0)
         end_date = dt.date(2015, 10, 1)
         result = tran.close_transaction(price=1.4950, date=end_date)
-        self.assertAlmostEqual(sum(tran.historic_pnl), tran.statistic_pnl.pnl)
+        self.assertAlmostEqual(sum(tran.historic_pnl), tran.summary_pnl.pnl)
 
     def test__when_transaction_closed_statistic_pnl_line_should_set_correct_exit_type_when_stopped_out_on_short(self):
         trade_details = TradeInstruction(1.500, 1.5050, -0.01, 'USDGBP', dt.date)
         tran = Transaction(trade_details, 10000)
         result = tran.close_transaction(1.5050)
         self.assertAlmostEqual(-100, result)
-        self.assertEqual(ExitType.Stopped, tran.statistic_pnl.exit_type)
+        self.assertEqual(ExitType.Stopped, tran.summary_pnl.exit_type)
 
     def test__when_transaction_closed_statistic_pnl_line_should_set_correct_exit_type_when_stopped_out_on_long(self):
         trade_details = TradeInstruction(1.500, 1.4950, 0.01, 'USDGBP', dt.date)
         tran = Transaction(trade_details, 10000)
         result = tran.close_transaction(1.4950)
         self.assertAlmostEqual(-100, result)
-        self.assertEqual(ExitType.Stopped, tran.statistic_pnl.exit_type)
+        self.assertEqual(ExitType.Stopped, tran.summary_pnl.exit_type)
 
 
 

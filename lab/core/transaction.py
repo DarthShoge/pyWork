@@ -14,7 +14,7 @@ class Transaction:
         self.commission_per_k = commission_per_k
         self.trade_details = trade_details
         self.spread = spread
-        self.statistic_pnl = PnlLine(opening_trade=trade_details)
+        self.summary_pnl = PnlLine(opening_trade=trade_details, initial_capital=capital)
         self.risk = trade_details.risk
         self.last_observed_price = trade_details.price
         self.direction = Direction.Long if trade_details.risk > 0 else Direction.Short
@@ -50,7 +50,7 @@ class Transaction:
     @pnl.setter
     def pnl(self, value):
         self.historic_pnl.append(value)
-        self.statistic_pnl.pnl = sum(self.historic_pnl)
+        self.summary_pnl.pnl = sum(self.historic_pnl)
 
     '''Assumption: price has no spread. Usage: to use potion size we say that if position size
     of 50k is worked out then for each pip move we make/lose 5 or 50*0.1'''
@@ -101,11 +101,11 @@ class Transaction:
         return self.pnl
 
     def set_pnl_values(self, date, price):
-        self.statistic_pnl.exit_type = ExitType.Stopped if (
+        self.summary_pnl.exit_type = ExitType.Stopped if (
             self.direction is Direction.Short and price >= self.trade_details.stop) or \
-                        (self.direction is Direction.Long and price <= self.trade_details.stop) else ExitType.Closed
-        self.statistic_pnl.to_date = date
-        self.statistic_pnl.close_price = price
+                                                         (self.direction is Direction.Long and price <= self.trade_details.stop) else ExitType.Closed
+        self.summary_pnl.to_date = date
+        self.summary_pnl.close_price = price
 
     def validate_close(self, risk_to_close):
         if self.direction is Direction.Short and risk_to_close < 0 or \
