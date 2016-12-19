@@ -13,7 +13,7 @@ if __name__ == "__main__":
     to_date = time.strftime("%c")
     # rates = lb.get_range(dp.get_rates(),from_date,'2011-02-20')
     # h = strat.run_with_diagnostics(rates)
-    backtest = my_bt.full_backtest(10000, date_range=('2010-01-01', '2013-01-01'))
+    backtest = my_bt.full_backtest(10000, date_range=('2007-01-01', '2009-01-01'))
 
     result = backtest[0]
     rets = [x.returns for x in backtest[1] if x is not None]
