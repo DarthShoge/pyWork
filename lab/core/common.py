@@ -31,49 +31,6 @@ def plot_data(df, title="closing prices", normalize=False):
     plt.show()
 
 
-def get_returns(df):
-    previous_day_df = df.shift(1)
-    return (df - previous_day_df) / previous_day_df
-
-
-def get_base_quote_returns(df, only_benchmark=False, benchmark='USD'):
-    rets = get_returns(df)
-    col_name = df.columns[0]
-    base_cur = col_name[0:3]
-    quote_cur = col_name[3:6]
-    base_df = rets.copy()
-    base_df.columns = [base_cur + quote_cur]
-    quote_df = -rets
-    quote_df.columns = [quote_cur + base_cur]
-    if (only_benchmark):
-        if (base_cur == benchmark):
-            return_df = base_df
-        else:
-            return_df = quote_df
-        return return_df
-    else:
-        return pd.concat([base_df, quote_df], axis=1)
-
-
-def get_relative_returns(data_df, with_benchmark=False):
-    returns_df = get_base_quote_returns(data_df[[0]], only_benchmark=True)
-
-    for col in data_df.columns[1:]:
-        col_returns_df = get_base_quote_returns(data_df[[col]], only_benchmark=True)
-        returns_df = returns_df.join(col_returns_df)
-
-    if (with_benchmark):
-        benchmark_ser = returns_df.mean(axis=1)
-        benchmark_ser.name = 'USD'
-        returns_df = returns_df.join(benchmark_ser)
-
-    return returns_df
-
-
-def get_rolling_weighted_returns(rel_returns_df, periods):
-    return rel_returns_df.rolling(window=periods, center=False).mean()
-
-
 def get_range(df, start, end):
     dates = pd.date_range(start, end)
     indexFrame = pd.DataFrame(index=dates)
@@ -81,61 +38,8 @@ def get_range(df, start, end):
     return jointFrame
 
 
-def calc_expected_prc_pos(risk, max_rank, x, risk_boundary=4):
-    x_invert = x - (max_rank + 1)
-    if 0 < x < risk_boundary:
-        return risk / x
-    elif x_invert > -risk_boundary < 0:
-        return risk / x_invert
-    else:
-        return 0.0
-
-
 def get_currency_pair_tuple(pair):
     return (pair[0:3], pair[3:6])
-
-
-def check_not_conventional(contra, conventions):
-    return [x for x in conventions if get_currency_pair_tuple(x)[0] == contra]
-
-
-def convert_to_natural_pair(original_pairs_array, benchmarked_ser):
-    benchmark_cur, contra_cur = get_currency_pair_tuple(benchmarked_ser.name)
-    is_unnatural = check_not_conventional(contra_cur, original_pairs_array)
-    if is_unnatural:
-        actual_name = contra_cur + benchmark_cur
-        natural_ser = -benchmarked_ser
-        natural_ser.rename(actual_name)
-        return natural_ser
-    else:
-        return benchmarked_ser
-
-
-def convert_to_natural_pair_df(original_pairs_array, df):
-    conventional_df = df.apply(lambda x: convert_to_natural_pair(original_pairs_array, x))
-    new_cols = []
-    for x in conventional_df.columns.values:
-        benchmark_cur, contra_cur = get_currency_pair_tuple(x)
-        if (check_not_conventional(contra_cur, original_pairs_array)):
-            new_cols.append(contra_cur + benchmark_cur)
-        else:
-            new_cols.append(x)
-    conventional_df.columns = new_cols
-
-    return conventional_df
-
-
-def calc_real_risk(p, p_minus1, current_r, expected_r, max_r):
-    max_r_multiplier = max_r * 100
-    polarity = -1 if expected_r < 0 else 1
-    real_max_r = max_r_multiplier * expected_r
-    if (p > p_minus1 and expected_r > 0) or (p < p_minus1 and expected_r < 0):
-        risk = (current_r + expected_r)
-        return min(abs(risk), abs(real_max_r)) * polarity
-    elif (expected_r == 0):
-        return 0
-    else:
-        return min(abs(current_r), abs(real_max_r)) * polarity
 
 
 def get_pips(value, currency=None):
