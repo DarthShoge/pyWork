@@ -49,7 +49,8 @@ class StrengthMomentum(Strategy):
         stop_as_price_df = (stop_pips_df / pip_mult_ar) * (risk_df.apply(lambda x: np.sign(x)))
         return price_df - stop_as_price_df
 
-    def run_with_diagnostics(self, rates):
+    def run_with_diagnostics(self, ohcl_rates):
+        rates = ohcl_rates.applymap(lambda x: x.close)
         diagnostic = type('', (), {})()
         diagnostic.data_df = rates
         rows, cols = diagnostic.data_df.shape
