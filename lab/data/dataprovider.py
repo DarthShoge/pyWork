@@ -5,8 +5,33 @@ import quandl as qdl
 
 qdl.ApiConfig.api_key = '61oas6mNaNKgDAh27k1x'
 
+
 class DataProvider(object):
     __metaclass__ = ABCMeta
+
+    @classmethod
+    def majors(self):
+        return ['EURUSD',
+                'AUDUSD',
+                'USDJPY',
+                'USDCAD',
+                'GBPUSD',
+                'NZDUSD',
+                'USDCHF']
+
+    @classmethod
+    def exotics(self):
+        return ['USDBRL',
+                'USDCNY',
+                'USDDKK',
+                'USDHKD',
+                'USDINR',
+                'USDMXN',
+                'USDTWD',
+                'USDNOK',
+                'USDSGD',
+                'USDSEK'
+                ]
 
     @abstractmethod
     def get_rates(self):
@@ -34,7 +59,6 @@ class FREDDataProvider(DataProvider):
     def exotics():
         return {'USDBRL': 'DEXBZUS',
                 'USDCNY': 'DEXCHUS',
-                'USDCNY': 'DEXCHUS',
                 'USDDKK': 'DEXDNUS',
                 'USDHKD': 'DEXHKUS',
                 'USDINR': 'DEXINUS',
@@ -48,7 +72,7 @@ class FREDDataProvider(DataProvider):
     def get_rate(self, currency):
         '''
         Gets currency using cur list found at https://www.quandl.com/blog/api-for-currency-data
-        >>> get_rate('DEXUSEU')
+        >>> self.get_rate('DEXUSEU')
         AUDUSD dataframe
         '''
         cur_code = self.currencies[currency]

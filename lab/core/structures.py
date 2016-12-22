@@ -10,7 +10,8 @@ class Direction(Enum):
 
 
 class Ohlc:
-    def __init__(self, open, high, low, close, volume=0):
+    def __init__(self,open, high, low, close, date=None, volume=0):
+        self.date = date
         self.open = open
         self.high = high
         self.low = low
@@ -18,7 +19,7 @@ class Ohlc:
         self.volume = volume
 
     def __repr__(self):
-        return "o:%s h:%s l:%s c:%s" % (self.open, self.high, self.low, self.close)
+        return "o:%s h:%s l:%s c:%s date:%s" % (self.open, self.high, self.low, self.close, self.date)
 
 
 class TradeInstruction:

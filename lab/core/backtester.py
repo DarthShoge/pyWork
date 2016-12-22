@@ -1,7 +1,8 @@
 import numpy as np
 import pandas as pd
 
-from lab import Position, get_range
+from lab.core.position import Position
+from lab.core.common import get_range
 
 
 class Backtester:

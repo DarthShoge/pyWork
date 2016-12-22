@@ -2,7 +2,8 @@ from abc import abstractmethod
 
 import numpy as np
 
-from lab import InitError, get_pips, as_price
+from lab.core.common import get_pips, as_price
+from lab.core.structures import InitError
 from lab.core.structures import Direction
 from lab.core.pnl_line import PnlLine, ExitType
 
