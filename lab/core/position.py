@@ -25,26 +25,25 @@ class Position:
     def summary_pnl(self):
         return PnlLine.sum([x for x in self.transaction_pnls])
 
-    def close_stop_outs(self, trade_line):
-        price = trade_line.price
+    def close_stop_outs(self, candle):
         running_pnl = 0
         for line in self.lines:
-            spread_price = as_price(line.spread, trade_line.currency)
-            short_stopped_out = line.direction is Direction.Short and price + spread_price >= line.trade_details.stop
-            long_stopped_out = line.direction is Direction.Long and price - spread_price <= line.trade_details.stop
+            spread_price = as_price(line.spread, line.trade_details.currency)
+            short_stopped_out = line.direction is Direction.Short and candle.high + spread_price >= line.trade_details.stop
+            long_stopped_out = line.direction is Direction.Long and candle.low - spread_price <= line.trade_details.stop
             if short_stopped_out or long_stopped_out:
-                running_pnl += line.close_transaction(line.trade_details.stop, date=trade_line.trade_date) #maybe we should use spread + price here
+                running_pnl += line.close_transaction(line.trade_details.stop, date=candle.date) #maybe we should use spread + price here
                 self.close_transaction(line)
         return running_pnl
 
-    def revalue_position(self, trade_line, current_capital):
+    def revalue_position(self, trade_line, current_candle, current_capital):
 
         if trade_line.currency != self.currency:
             raise LookupError('Currencies do not match')
 
         pnl_line = Transaction(trade_line, current_capital, commission_per_k=self.commission_per_k, spread=self.spread)
         locked_in_pnl = 0
-        locked_in_pnl += self.close_stop_outs(trade_line)
+        locked_in_pnl += self.close_stop_outs(current_candle)
 
         if abs(pnl_line.risk) > 0 and (self.net_direction is None or self.net_direction == pnl_line.direction):
             locked_in_pnl += pnl_line.pnl

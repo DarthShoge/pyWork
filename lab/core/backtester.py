@@ -26,7 +26,7 @@ class Backtester:
             return spread_map[currency]
 
     @staticmethod
-    def calculate_position(current_holding, today, capital, commission_per_k, currency, spread_map=None):
+    def calculate_position(current_holding, today, capital, commission_per_k, currency, todays_candle,spread_map=None):
         spread = Backtester.get_spread(spread_map,currency)
         if np.isnan(today.stop): return current_holding
         today_has_risk = not np.isnan(today.risk) and today.risk != 0
@@ -37,24 +37,25 @@ class Backtester:
         if current_holding is None and not today_has_risk:
             return None
         else:
-            current_holding.revalue_position(today, capital)
+            current_holding.revalue_position(today, todays_candle, capital)
             return current_holding
 
     @staticmethod
-    def backtest(capital, trade_details_df, commission_per_k=0.0, spread_map=None):
+    def backtest(capital, trade_details_df, rates_df, commission_per_k=0.0, spread_map=None):
         backtest_results_df = pd.DataFrame(index=trade_details_df.index.values, columns=trade_details_df.columns.values)
         backtest_results_df = backtest_results_df.where((pd.notnull(backtest_results_df)), None)
         last_t = trade_details_df.index.values[0]
         backtest_results_df.set_value(last_t, 'PnL', capital)
         pnl_breakdown = []
-        for t in trade_details_df.index.values[1:]:
+        for t in rates_df.index.values[1:]:
             current_capital = backtest_results_df.ix[last_t, 'PnL']
             for currency in trade_details_df.columns.values:
+                todays_candle = rates_df.ix[t, currency]
                 todays_details = trade_details_df.ix[t, currency]
                 current_position = backtest_results_df.ix[last_t, currency]
 
                 current_position = Backtester.calculate_position(current_position, todays_details, capital,
-                                                                 commission_per_k, currency, spread_map)
+                                                                 commission_per_k, currency, todays_candle, spread_map)
 
                 if current_position is not None:
                     current_capital += current_position.pnl_history[-1]
@@ -76,4 +77,4 @@ class Backtester:
 
         spread_map = Backtester.spread_map() if use_spread else None
 
-        return self.backtest(capital, trade_details, commission_per_k,spread_map)
+        return self.backtest(capital, trade_details, rates, commission_per_k,spread_map)
