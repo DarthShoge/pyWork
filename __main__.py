@@ -6,10 +6,10 @@ import numpy as np
 
 if __name__ == "__main__":
     cap1 = 10000
-    strat = lb.StrengthMomentum(lookback=20,max_risk=0.05)
+    strat = lb.StrengthMomentum(lookback=2, max_risk=0.05)
     strat.stop_price_def = lambda x, y: strat.calc_stop_prices(x, y, short_avg_period=3)
     dp = lb.FREDDataProvider(use_exotics=False)
-    oanda = lb.OandaDataProvider(dt.date(2012, 1, 1), dt.date(2013, 1, 1), "H4")
+    oanda = lb.OandaDataProvider(dt.date(2012, 1, 1), dt.date(2013, 1, 1), "D")
     my_bt = lb.Backtester(oanda, strat)
     from_date = '2011-01-01'
     to_date = time.strftime("%c")

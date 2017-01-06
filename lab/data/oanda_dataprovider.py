@@ -1,6 +1,7 @@
 import requests
 import datetime as dt
 import pandas as pd
+import numpy as np
 from lab.core.structures import Ohlc
 from lab.data.dataprovider import DataProvider
 
@@ -53,5 +54,5 @@ class OandaDataProvider(DataProvider):
         h = candle['high' + price_type]
         l = candle['low' + price_type]
         c = candle['close' + price_type]
-        d = dt.datetime.strptime(candle['time'], '%Y-%m-%dT%H:%M:%S.%fZ')
+        d = np.datetime64(dt.datetime.strptime(candle['time'], '%Y-%m-%dT%H:%M:%S.%fZ'))
         return Ohlc(o, h, l, c, d)
