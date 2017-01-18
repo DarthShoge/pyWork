@@ -7,7 +7,7 @@ class Indicator(object):
     __metaclass__ = ABCMeta
 
     @abstractmethod
-    def calculate(self, price_ser):
+    def calculate(self, price_ser): 
         raise NotImplementedError('Must implement calculate()')
 
 
