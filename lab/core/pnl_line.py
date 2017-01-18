@@ -21,9 +21,10 @@ class PnlLine:
         self.open_price = opening_trade.price
         self.close_price = close_price
         self.exit_type = ExitType.Closed
+        self.returns = np.NaN
         self.__pnl__ = pnl
         if pnl != 0 and initial_capital != 0:
-            self.returns = np.NaN if initial_capital is np.NaN else pnl / initial_capital
+            self.returns = self.returns if initial_capital is np.NaN else pnl / initial_capital
 
     @property
     def pnl(self):

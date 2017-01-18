@@ -3,6 +3,7 @@ from abc import ABCMeta, abstractmethod
 import numpy as np
 import pandas as pd
 
+from lab.indicators.indicator import ATR
 from lab.core.common import get_pips, get_currency_pair_tuple, price_data_to_trade_lines
 
 
@@ -42,7 +43,8 @@ class StrengthMomentum(Strategy):
         return (data_df.rolling(window=periods).max() - data_df.rolling(window=periods).min()).rolling(
             window=avging_periods).mean()
 
-    def calc_stop_prices(self, risk_df, price_df, short_avg_period=7):
+    def calc_stop_prices(self, risk_df, rates_df, short_avg_period=7):
+        price_df = rates_df.applymap(lambda x: x.open)
         avg_range = self.calc_avg_closing_range(price_df, periods=short_avg_period, avging_periods=28) / 2
         stop_pips_df = avg_range.apply(lambda x: get_pips(x))
         pip_mult_ar = [100 if get_currency_pair_tuple(x)[1] == 'JPY' else 10000 for x in price_df.columns.values]
@@ -50,7 +52,7 @@ class StrengthMomentum(Strategy):
         return price_df - stop_as_price_df
 
     def run_with_diagnostics(self, ohcl_rates):
-        rates = ohcl_rates.applymap(lambda x: x.close)
+        rates = ohcl_rates.applymap(lambda x: x.open)
         diagnostic = type('', (), {})()
         diagnostic.data_df = rates
         rows, cols = diagnostic.data_df.shape
@@ -66,7 +68,7 @@ class StrengthMomentum(Strategy):
         diagnostic.rolling_risk = self.calc_rolling_risk(diagnostic.data_df, diagnostic.conventional_t_risk,
                                                          self.max_risk)
         daily_risk = diagnostic.rolling_risk - diagnostic.rolling_risk.shift(1)
-        diagnostic.stop_price_df = self.stop_price_def(daily_risk, diagnostic.data_df)
+        diagnostic.stop_price_df = self.stop_price_def(daily_risk, ohcl_rates)
         diagnostic.stop_pips_df = (diagnostic.stop_price_df - diagnostic.data_df).apply(get_pips).fillna(value=0)
         daily_risk.fillna(0, inplace=True)
         diagnostic.trade_details = price_data_to_trade_lines(diagnostic.data_df, daily_risk, diagnostic.stop_price_df,
@@ -169,3 +171,17 @@ def calc_real_risk(p, p_minus1, current_r, expected_r, max_r):
         return 0
     else:
         return min(abs(current_r), abs(real_max_r)) * polarity
+
+
+class ATRCalcDef:
+    def __init__(self, multiplier):
+        self.multiplier = multiplier
+
+    def calc_stop_prices(self, risk_df, price_df, periods=7):
+        atr = ATR(periods=periods)
+        stop_df = pd.DataFrame(index=price_df.index, columns=price_df.columns)
+        for col in stop_df.columns:
+            atr_df = atr.calculate_dataframe(price_df[col]).shift(1)
+            atr_df['true_atr'] = risk_df[col].apply(lambda x: np.sign(x)) * atr_df['atr'] * self.multiplier
+            stop_df[col] = atr_df['true_atr']
+        return price_df.applymap(lambda x: x.open) - stop_df
