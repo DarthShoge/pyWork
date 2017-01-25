@@ -7,8 +7,12 @@ class Indicator(object):
     __metaclass__ = ABCMeta
 
     @abstractmethod
-    def calculate(self, price_ser): 
+    def calculate(self, price_ser):
         raise NotImplementedError('Must implement calculate()')
+
+    @abstractmethod
+    def calculate_dataframe(self, price_ser):
+        raise NotImplementedError('Must implement calculate_dataframe()')
 
 
 class ATR(Indicator):
