@@ -1,21 +1,11 @@
-import datetime as dt
 import unittest as ut
 
 import numpy as np
 import pandas as pd
 
-from lab.core.structures import Ohlc
+from lab import Ohlc
 from lab.indicators.ema import EMA
-from lab.strategy.strategy import Strategy
-
-
-def date_range(numdays, date=dt.datetime(2016, 10, 20)):
-    return [date + dt.timedelta(days=x) for x in range(0, numdays)]
-
-
-class EMAStrategyTests(ut.TestCase):
-    def test_can_initialise(self):
-        pass
+from lab.test.test_crossover_strategy import date_range
 
 
 class EMATests(ut.TestCase):
@@ -49,8 +39,3 @@ class EMATests(ut.TestCase):
                          Ohlc(50.04, 50.46, 49.97, 50.40)], index=date_range(6))
         ema = sut.calculate(ser)
         self.assertAlmostEqual(49.992, ema)
-
-
-class EMAStrategy(Strategy):
-    def run(self, rates):
-        pass

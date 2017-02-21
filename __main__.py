@@ -3,7 +3,10 @@ import lab as lb
 import datetime as dt
 import matplotlib.pyplot as plt
 import numpy as np
+#import scipy
+import statsmodels.api as sm
 from lab.strategy.strategy import ATRCalcDef
+
 
 if __name__ == "__main__":
     cap1 = 10000
@@ -30,5 +33,7 @@ if __name__ == "__main__":
 
     result = my_bt.full_backtest(10000, date_range=('2004-01-01', time.strftime("%c")), use_spread=False)
     lb.plot_data(result.PnL)
+
+
 
 
