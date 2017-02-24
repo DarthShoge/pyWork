@@ -40,8 +40,7 @@ class Backtester:
             current_holding.revalue_position(today, todays_candle, capital)
             return current_holding
 
-    @staticmethod
-    def backtest(capital, trade_details_df, rates_df, commission_per_k=0.0, spread_map=None):
+    def backtest(self, capital, trade_details_df, rates_df, commission_per_k=0.0, spread_map=None):
         backtest_results_df = pd.DataFrame(index=trade_details_df.index.values, columns=trade_details_df.columns.values)
         backtest_results_df = backtest_results_df.where((pd.notnull(backtest_results_df)), None)
         last_t = trade_details_df.index.values[0]

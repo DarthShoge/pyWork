@@ -14,8 +14,15 @@ class Strategy(object):
     def run(self, rates):
         raise NotImplementedError('Must implement run()')
 
+    @abstractmethod
+    def schedule(self, positions, data_ser):
+        raise NotImplementedError('Must implement schedule()')
+
 
 class StrengthMomentum(Strategy):
+    def schedule(self, positions, data_ser):
+        pass
+
     def __init__(self, lookback=5, risk_per_trade=0.01, max_risk=0.05, stop_price_def=None):
         self.stop_price_def = self.calc_stop_prices if stop_price_def is None else stop_price_def
         self.lookback = lookback

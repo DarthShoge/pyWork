@@ -1,4 +1,4 @@
-from lab.core.structures import Direction
+from lab.core.structures import Direction, StopType
 from lab.core.transaction import Transaction
 from lab.core.pnl_line import PnlLine
 from lab.core.common import as_price
@@ -22,12 +22,18 @@ class Position:
         return None if not self.lines else self.lines[-1].direction
 
     @property
+    def net_risk(self):
+        return 0 if not self.lines else sum([l.risk for l in self.lines])
+
+    @property
     def summary_pnl(self):
         return PnlLine.sum([x for x in self.transaction_pnls])
 
     def close_stop_outs(self, candle):
         running_pnl = 0
         for line in self.lines:
+            if line.trade_details.stop_type is StopType.Soft:
+                continue
             spread_price = as_price(line.spread, line.trade_details.currency)
             short_stopped_out = line.direction is Direction.Short and candle.high + spread_price >= line.trade_details.stop
             long_stopped_out = line.direction is Direction.Long and candle.low - spread_price <= line.trade_details.stop

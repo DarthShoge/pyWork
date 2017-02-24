@@ -270,4 +270,3 @@ class TransactionUnitTests(unittest.TestCase):
         self.assertEqual(ExitType.Stopped, tran.summary_pnl.exit_type)
 
 
-

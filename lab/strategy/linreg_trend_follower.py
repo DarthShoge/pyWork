@@ -3,13 +3,19 @@ import matplotlib.pyplot as plt
 import numpy as np
 from lab.core.structures import TradeInstruction
 import pandas as pd
-#import scipy
+# import scipy
 import statsmodels.api as sm
 
-class LineReg_Tf(Strategy):
 
+class LineReg_Tf(Strategy):
     def __init__(self, lookback):
         self.lookback = lookback
+
+    def schedule(self, positions, data_ser):
+        mean = data_ser[-self.lookback].mean()
+        # Stop loss percentage is the return over the lookback period
+        stoploss = abs(positions[0] * context.lookback / 252) + 1  # percent change per period
+
 
     def run(self, rates):
         instructions = pd.DataFrame(None, rates.index, rates.columns, type(TradeInstruction))
@@ -20,8 +26,8 @@ class LineReg_Tf(Strategy):
         rates_window = rates_ser[self.lookback:].rolling(1)
         for i in range(self.lookback, len(rates_ser) - self.lookback):
             window_ser = rates_ser[i - self.lookback:i]
-            regr = self.regression(window_ser,instructions[:i-1])
-            new_instruction = TradeInstruction(rates_ser[i],regr[1],regr[0],rates_ser.name,window_ser.index[i])
+            regr = self.regression(window_ser, instructions[:i - 1])
+            new_instruction = TradeInstruction(rates_ser[i], regr[1], regr[0], rates_ser.name, window_ser.index[i])
 
     def regression(self, data_ser, instructions_ser):
         prices = data_ser.apply(lambda x: x.open)
@@ -30,12 +36,12 @@ class LineReg_Tf(Strategy):
         A = sm.add_constant(X)
         sd = prices.std()
         Y = prices.values
-        profittake= 1.96
+        profittake = 1.96
         # Run regression y = ax + b
         results = sm.OLS(Y, A).fit()
         (b, a) = results.params
         # Normalized slope
-        slope = (a / b) * days_in_year # Daily return regression * 1 year
+        slope = (a / b) * days_in_year  # Daily return regression * 1 year
         # Currently how far away from regression line?
         delta = Y - (np.dot(a, X) + b)
         # Don't trade if the slope is near flat
@@ -71,7 +77,6 @@ class LineReg_Tf(Strategy):
                 new_weight = -current_position
 
         return (new_weight, stop_price, b, a, slope)
-
 
     # def regression(self, X_len, data, context=None):
     #     prices = data.apply(lambda x: x.open)

@@ -3,7 +3,7 @@ import unittest
 from lab import Ohlc
 
 from lab import Transaction, Position
-from lab.core.structures import Direction, TradeInstruction
+from lab.core.structures import Direction, TradeInstruction, StopType
 
 
 def ohcl(o, c, h, l):
@@ -11,11 +11,11 @@ def ohcl(o, c, h, l):
 
 
 class PositionUnitTests(unittest.TestCase):
-    def create_trade_line(self, price=1.500, stop=1.4950, risk=0.01, currency='USDGBP', date=dt.date):
-        return TradeInstruction(price, stop, risk, currency, date)
+    def create_trade_line(self, price=1.500, stop=1.4950, risk=0.01, currency='USDGBP', date=dt.date, stop_type=StopType.Hard):
+        return TradeInstruction(price, stop, risk, currency, date, stop_type)
 
-    def create_transaction(self, price=1.500, stop=1.4950, risk=0.01, currency='USDGBP', date=dt.date, spread=0):
-        trade_details = self.create_trade_line(price, stop, risk, currency, date)
+    def create_transaction(self, price=1.500, stop=1.4950, risk=0.01, currency='USDGBP', date=dt.date, spread=0, stop_type=StopType.Hard):
+        trade_details = self.create_trade_line(price, stop, risk, currency, date, stop_type)
         tran = Transaction(trade_details, 10000, spread=spread)
         return tran
 
@@ -223,6 +223,30 @@ class PositionUnitTests(unittest.TestCase):
         position.revalue_position(instruction1, candle1, 10000)
         self.assertTrue(position.transaction_pnls[0])
         self.assertAlmostEqual(-100, position.transaction_pnls[0].pnl)
+
+    def test_revalue_position_stop_out_should_not_stop_out_soft_stop_trade(self):
+        transaction = self.create_transaction(price=1.5,stop=1.5050,risk=-0.01,stop_type=StopType.Soft)
+        position = Position(transaction.trade_details, 10000)
+        instruction = self.create_trade_line(price=1.5050,stop=1.5025,risk=0.0001)
+        candle = ohcl(instruction.price,instruction.price, instruction.price, instruction.price)
+        position.revalue_position(instruction, candle, 10000)
+        self.assertEqual(0, len(position.transaction_pnls))
+
+    def test_position_should_set_net_risk_correctly(self):
+        transaction = self.create_transaction(currency="EURUSD")
+        position = Position(transaction.trade_details, 10000)
+        self.assertEqual(transaction.risk, position.net_risk)
+
+    def test_get_net_risk_should_show_total_risk_correctly(self):
+        transaction = self.create_transaction(price=1.5, stop=1.5050, risk=-0.01)
+        position = Position(transaction.trade_details, 10000)
+        instruction = self.create_trade_line(price=1.4990, stop=1.5050, risk=-0.005)
+        candle = ohcl(instruction.price,instruction.price, instruction.price, instruction.price)
+        position.revalue_position(instruction, candle, 10000)
+        instruction = self.create_trade_line(price=1.4980, stop=1.5050, risk=-0.005)
+        candle = ohcl(instruction.price,instruction.price, instruction.price, instruction.price)
+        position.revalue_position(instruction, candle, 10000)
+        self.assertAlmostEqual(-0.02, position.net_risk)
 
 
 

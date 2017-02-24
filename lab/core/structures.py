@@ -8,6 +8,10 @@ class Direction(Enum):
     Short = -1
     Long = 1
 
+class StopType(Enum):
+    Hard = 0
+    Soft = 1
+
 
 class Ohlc:
     def __init__(self,open, high, low, close, date=None, volume=0):
@@ -23,10 +27,11 @@ class Ohlc:
 
 
 class TradeInstruction:
-    def __init__(self, price, stop, risk, currency, trade_date):
+    def __init__(self, price, stop, risk, currency, trade_date, stop_type=StopType.Hard):
         self.currency = currency
         self.price = price
         self.stop = stop
+        self.stop_type = stop_type
         self.risk = risk
         self.trade_date = trade_date
 
