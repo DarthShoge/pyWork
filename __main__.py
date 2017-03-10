@@ -5,13 +5,15 @@ import matplotlib.pyplot as plt
 import numpy as np
 #import scipy
 import statsmodels.api as sm
+
 from lab.strategy.strategy import ATRCalcDef
 
 
 if __name__ == "__main__":
     cap1 = 10000
     calc_def = ATRCalcDef(multiplier=2)
-    strat = lb.StrengthMomentum(lookback=31, max_risk=0.05)
+    strat = lb.LineReg_Tf(lookback=126)
+    # strat = lb.StrengthMomentum.StrengthMomentum(lookback=31, max_risk=0.05)
     strat.stop_price_def = lambda x, y: calc_def.calc_stop_prices(x, y, periods=14)
     dp = lb.FREDDataProvider(use_exotics=False)
     oanda = lb.OandaDataProvider(dt.date(2010, 1, 1), dt.date(2015, 1, 1), "D")

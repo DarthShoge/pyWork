@@ -55,7 +55,7 @@ class PnlLine:
         return pnl_line
 
     def __repr__(self):
-        return "pnl: %d ret: %f from:%s to:%s" % (self.pnl, self.returns, self.from_date, self.to_date)
+        return f"pnl: {self.pnl} ret: {self.returns} from:{self.from_date} to:{self.to_date}"
 
     @staticmethod
     def sum(lines):

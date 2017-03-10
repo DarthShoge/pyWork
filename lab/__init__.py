@@ -5,5 +5,6 @@ from lab.core.position import Position
 from lab.core.structures import InitError, Direction, TradeInstruction, Ohlc
 from lab.core.transaction import Transaction
 from lab.data import FREDDataProvider, DataProvider, OandaDataProvider
-from lab.strategy import StrengthMomentum
+from lab.strategy.strength_momentum import StrengthMomentum
+from lab.strategy.linreg_trend_follower import LineReg_Tf
 from lab.indicators import ATR, Indicator

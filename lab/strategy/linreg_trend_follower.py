@@ -1,7 +1,9 @@
 from lab.strategy.strategy import Strategy
+from lab.core.position import Position
 import matplotlib.pyplot as plt
 import numpy as np
-from lab.core.structures import TradeInstruction
+from lab.core.structures import TradeInstruction, Direction, StopType
+from typing import List
 import pandas as pd
 # import scipy
 import statsmodels.api as sm
@@ -11,25 +13,50 @@ class LineReg_Tf(Strategy):
     def __init__(self, lookback):
         self.lookback = lookback
 
-    def schedule(self, positions, data_ser):
-        mean = data_ser[-self.lookback].mean()
-        # Stop loss percentage is the return over the lookback period
-        stoploss = abs(positions[0] * context.lookback / 252) + 1  # percent change per period
+    def schedule(self, positions: List[Position], data_ser: pd.Series):
+        if not positions:
+            return
 
+        for pos in positions:
 
-    def run(self, rates):
+            if pos is None:
+                continue
+
+            stop = self.calculate_stop(data_ser, pos.net_direction, pos.net_risk)
+
+            for l in pos.lines:
+                    l.trade_details.stop_type = StopType.Hard
+                    l.trade_details.stop = stop
+
+    def calculate_stop(self, data_ser: pd.Series, direction: Direction, risk = 0.01):
+        avg_price = data_ser[:self.lookback].apply(lambda x : x.open).mean()
+
+        stoploss_quotient = abs(risk * self.lookback / 252) + 1  # percent change per period
+
+        if direction is Direction.Long:
+            return avg_price * stoploss_quotient
+        else:
+            return avg_price / stoploss_quotient
+
+    def run(self, rates : pd.DataFrame):
         instructions = pd.DataFrame(None, rates.index, rates.columns, type(TradeInstruction))
-        pass
+        for col in range(len(rates.columns)):
+            rates_ser = rates.ix[:,col]
+            instructions.ix[:,col] = self.get_regressions(rates_ser)
+        return instructions
+
 
     def get_regressions(self, rates_ser):
         instructions = pd.Series(None, rates_ser.index, TradeInstruction, rates_ser.name)
-        rates_window = rates_ser[self.lookback:].rolling(1)
         for i in range(self.lookback, len(rates_ser) - self.lookback):
             window_ser = rates_ser[i - self.lookback:i]
-            regr = self.regression(window_ser, instructions[:i - 1])
-            new_instruction = TradeInstruction(rates_ser[i], regr[1], regr[0], rates_ser.name, window_ser.index[i])
+            regr = self.regression(window_ser, instructions[:i])
+            if not np.isnan(regr[0]):
+                new_instruction = TradeInstruction(rates_ser[i].open, regr[1], regr[0], rates_ser.name, rates_ser.index[i],StopType.Soft)
+                instructions[i] = new_instruction
+        return instructions
 
-    def regression(self, data_ser, instructions_ser):
+    def regression(self, data_ser, instructions_ser: pd.Series):
         prices = data_ser.apply(lambda x: x.open)
         days_in_year = 252
         X = range(len(prices))
@@ -45,12 +72,11 @@ class LineReg_Tf(Strategy):
         # Currently how far away from regression line?
         delta = Y - (np.dot(a, X) + b)
         # Don't trade if the slope is near flat
-        slope_min = 0.252
+        slope_min = 0.126 #0.252
         # Current gain if trading
         new_weight = np.NaN
         stop_price = np.NaN
-        current_position = instructions_ser.apply(lambda x: x.risk).sum()
-        s = 'EURGBP'
+        current_position = instructions_ser.dropna().apply(lambda x: x.risk).sum()
         # Long but slope turns down, then exit or Short but slope turns upward, then exit
         if (current_position > 0 and slope < 0) or (current_position < 0 and 0 < slope):
             new_weight = -current_position
@@ -59,8 +85,8 @@ class LineReg_Tf(Strategy):
         if slope > slope_min:
             # Price crosses the regression line
             if delta[-1] > 0 and delta[-2] < 0 and current_position == 0:
-                stop_price = None
-                new_weight = slope
+                stop_price = self.calculate_stop(data_ser, Direction.Long)
+                new_weight = slope/10
             # Profit take, reaches the top of 95% bollinger band
             if delta[-1] > profittake * sd and current_position > 0:
                 new_weight = -current_position
@@ -69,8 +95,8 @@ class LineReg_Tf(Strategy):
         if slope < -slope_min:
             # Price crosses the regression line
             if delta[-1] < 0 and delta[-2] > 0 and current_position == 0:
-                stop_price = None
-                new_weight = slope
+                stop_price = self.calculate_stop(data_ser, Direction.Short)
+                new_weight = slope/10
 
             # Profit take, reaches the top of 95% bollinger band
             if delta[-1] < - profittake * sd and current_position < 0:

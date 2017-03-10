@@ -3,12 +3,14 @@ import pandas as pd
 
 from lab.core.position import Position
 from lab.core.common import get_range
+from lab.core.structures import TradeInstruction
+from lab.strategy.strategy import Strategy
 
 
 class Backtester:
     def __init__(self, dataprovider, strategy):
         self.dataprovider = dataprovider
-        self.strategy = strategy
+        self.strategy : Strategy = strategy
         self.position_pnls = []
 
     @staticmethod
@@ -28,7 +30,7 @@ class Backtester:
     @staticmethod
     def calculate_position(current_holding, today, capital, commission_per_k, currency, todays_candle,spread_map=None):
         spread = Backtester.get_spread(spread_map,currency)
-        if np.isnan(today.stop): return current_holding
+        if not (type(today) is TradeInstruction) or np.isnan(today.stop): return current_holding
         today_has_risk = not np.isnan(today.risk) and today.risk != 0
 
         if current_holding is None and today_has_risk:
@@ -52,6 +54,8 @@ class Backtester:
                 todays_candle = rates_df.ix[t, currency]
                 todays_details = trade_details_df.ix[t, currency]
                 current_position = backtest_results_df.ix[last_t, currency]
+
+                self.strategy.schedule([current_position],rates_df[currency][:t])
 
                 current_position = Backtester.calculate_position(current_position, todays_details, capital,
                                                                  commission_per_k, currency, todays_candle, spread_map)
