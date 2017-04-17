@@ -68,11 +68,13 @@ class LineReg_Tf(Strategy):
         results = sm.OLS(Y, A).fit()
         (b, a) = results.params
         # Normalized slope
-        slope = (a / b) * days_in_year  # Daily return regression * 1 year
+        # slope = (a / b) * days_in_year  # Daily return regression * 1 year
+        true_slope = (a / b) * self.lookback  # Daily return regression * 1 year
+        slope = -true_slope # Daily return regression * 1 year
         # Currently how far away from regression line?
         delta = Y - (np.dot(a, X) + b)
         # Don't trade if the slope is near flat
-        slope_min = 0.126 #0.252
+        slope_min = 0.063 #0.252
         # Current gain if trading
         new_weight = np.NaN
         stop_price = np.NaN
@@ -85,8 +87,8 @@ class LineReg_Tf(Strategy):
         if slope > slope_min:
             # Price crosses the regression line
             if delta[-1] > 0 and delta[-2] < 0 and current_position == 0:
-                stop_price = self.calculate_stop(data_ser, Direction.Long)
-                new_weight = slope/10
+                stop_price = self.calculate_stop(data_ser, Direction.Short)
+                new_weight = (-slope/10)
             # Profit take, reaches the top of 95% bollinger band
             if delta[-1] > profittake * sd and current_position > 0:
                 new_weight = -current_position
@@ -95,8 +97,8 @@ class LineReg_Tf(Strategy):
         if slope < -slope_min:
             # Price crosses the regression line
             if delta[-1] < 0 and delta[-2] > 0 and current_position == 0:
-                stop_price = self.calculate_stop(data_ser, Direction.Short)
-                new_weight = slope/10
+                stop_price = self.calculate_stop(data_ser, Direction.Long)
+                new_weight = (-slope/10)
 
             # Profit take, reaches the top of 95% bollinger band
             if delta[-1] < - profittake * sd and current_position < 0:
@@ -146,7 +148,8 @@ class LineReg_Tf(Strategy):
     #
     #     return (b, a, slope)
 
-    def plot_regr(a, b, X, Y):
+    def plot_regr(self, a, b, X, Y, title=''):
         Y_reg = np.dot(a, X) + b
+        plt.title(title)
         plt.plot(X, Y_reg, '.')
         plt.plot(X, Y, '-')

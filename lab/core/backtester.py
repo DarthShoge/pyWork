@@ -10,7 +10,7 @@ from lab.strategy.strategy import Strategy
 class Backtester:
     def __init__(self, dataprovider, strategy):
         self.dataprovider = dataprovider
-        self.strategy : Strategy = strategy
+        self.strategy: Strategy = strategy
         self.position_pnls = []
 
     @staticmethod
@@ -28,13 +28,19 @@ class Backtester:
             return spread_map[currency]
 
     @staticmethod
-    def calculate_position(current_holding, today, capital, commission_per_k, currency, todays_candle,spread_map=None):
-        spread = Backtester.get_spread(spread_map,currency)
-        if not (type(today) is TradeInstruction) or np.isnan(today.stop): return current_holding
+    def calculate_position(current_holding : Position, today, capital, commission_per_k, currency, todays_candle, spread_map=None):
+        spread = Backtester.get_spread(spread_map, currency)
+
+        if not (type(today) is TradeInstruction) and not (current_holding is None):
+            current_holding.pnl_history.append(0)
+            return current_holding
+
+        if not (type(today) is TradeInstruction) or np.isnan(today.stop):
+            return current_holding
         today_has_risk = not np.isnan(today.risk) and today.risk != 0
 
         if current_holding is None and today_has_risk:
-            return Position(today, capital, commission_per_k,spread)
+            return Position(today, capital, commission_per_k, spread)
 
         if current_holding is None and not today_has_risk:
             return None
@@ -55,13 +61,23 @@ class Backtester:
                 todays_details = trade_details_df.ix[t, currency]
                 current_position = backtest_results_df.ix[last_t, currency]
 
-                self.strategy.schedule([current_position],rates_df[currency][:t])
+                # DEBUG
+                if type(todays_details) is TradeInstruction:
+                    1 + 1
+
+                self.strategy.schedule([current_position], rates_df[currency][:t])
 
                 current_position = Backtester.calculate_position(current_position, todays_details, capital,
                                                                  commission_per_k, currency, todays_candle, spread_map)
 
                 if current_position is not None:
-                    current_capital += current_position.pnl_history[-1]
+                    todays_profit = current_position.pnl_history[-1]
+
+                    # DEBUG
+                    if abs(todays_profit) > 0:
+                        1 + 1
+
+                    current_capital += todays_profit
                     if abs(sum([x.risk for x in current_position.lines])) == 0:
                         pnl_breakdown.append(current_position.summary_pnl)
                         current_position = None
@@ -80,4 +96,4 @@ class Backtester:
 
         spread_map = Backtester.spread_map() if use_spread else None
 
-        return self.backtest(capital, trade_details, rates, commission_per_k,spread_map)
+        return self.backtest(capital, trade_details, rates, commission_per_k, spread_map)
