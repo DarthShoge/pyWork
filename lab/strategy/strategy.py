@@ -5,6 +5,7 @@ import numpy as np
 import pandas as pd
 
 from lab.core.position import Position
+from lab.core.structures import BacktestContext
 from lab.indicators.indicator import ATR
 
 
@@ -16,7 +17,7 @@ class Strategy(object):
         raise NotImplementedError('Must implement run()')
 
     @abstractmethod
-    def schedule(self, positions: List[Position], data_ser: pd.Series):
+    def schedule(self, positions: List[Position], data_ser: pd.Series, context : BacktestContext):
         raise NotImplementedError('Must implement schedule()')
 
 

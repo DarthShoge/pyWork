@@ -37,3 +37,12 @@ class TradeInstruction:
 
     def __repr__(self):
         return 'p=%s, s=%s, r=%s' % (self.price, self.stop, self.risk)
+
+
+class BacktestContext():
+
+    def __init__(self, capital):
+        self.commission_per_k = 0.0
+        self.spreadmap = []
+        self.capital = capital
+        self.positions = []
