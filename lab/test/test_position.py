@@ -14,9 +14,9 @@ class PositionUnitTests(unittest.TestCase):
     def create_trade_line(self, price=1.500, stop=1.4950, risk=0.01, currency='USDGBP', date=dt.date, stop_type=StopType.Hard):
         return TradeInstruction(price, stop, risk, currency, date, stop_type)
 
-    def create_transaction(self, price=1.500, stop=1.4950, risk=0.01, currency='USDGBP', date=dt.date, spread=0, stop_type=StopType.Hard):
+    def create_transaction(self, price=1.500, stop=1.4950, risk=0.01, currency='USDGBP', date=dt.date, spread=0, commission_per_k =0, stop_type=StopType.Hard):
         trade_details = self.create_trade_line(price, stop, risk, currency, date, stop_type)
-        tran = Transaction(trade_details, 10000, spread=spread)
+        tran = Transaction(trade_details, 10000, spread=spread,commission_per_k=commission_per_k)
         return tran
 
     def test_position_with_no_transaction_should_throw(self):
@@ -55,8 +55,10 @@ class PositionUnitTests(unittest.TestCase):
             position.revalue_position(instruction2, candle, 10000)
 
     def test_revalue_position_should_apply_transaction_costs_on_initialisation(self):
-        transaction = self.create_transaction(price=1.5,stop=1.5050,risk=-0.01)
-        position = Position(transaction.trade_details, 10000, spread=2)
+        commission_per_k = 0.5
+        spread = 2
+        transaction = self.create_transaction(price=1.5, stop=1.5050, risk=-0.01, spread=spread, commission_per_k=commission_per_k)
+        position = Position(transaction.trade_details, 10000, spread=spread, commission_per_k=commission_per_k)
         self.assertEquals(transaction.pnl, position.pnl_history[-1])
 
     def test_revalue_position_should_return_0_pnl_if_no_close_out(self):

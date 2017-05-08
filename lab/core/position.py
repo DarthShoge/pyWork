@@ -13,7 +13,7 @@ class Position:
         self.lines = [trsction]
         self.commission_per_k = commission_per_k
         self.spread = spread
-        self.pnl_history = [0]
+        self.pnl_history = [trsction.pnl]
         self.transaction_pnls = []
         self.currency = initiating_line.currency
 

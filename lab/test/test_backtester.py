@@ -83,8 +83,14 @@ class Backtester2:
             capital = self.context.pnl[t_slice]
             for currency in price_data.columns.values:
                 data_ser = price_data.ix[:index,currency]
-                positions = self.context.positions[currency]
-                self.context = self.strategy.schedule(positions, data_ser,self.context)
+                positions :List[Position] = self.context.positions[currency]
+                instruction = self.strategy.schedule(positions, data_ser,self.context)
+
+                if positions == [] and instruction != None:
+                    positions.append(Position(instruction, self.context.capital,commission_per_k))
+                elif positions != [] and instruction != None:
+                    positions[-1].revalue_position(instruction,price_data[index,currency],capital)
+
                 nom_returns = sum([p.pnl_history[-1] for p in positions])
                 self.context.attribution.loc[index,currency] = nom_returns
                 capital = capital+nom_returns
@@ -111,27 +117,20 @@ class SimpleMovingAvgStrategy(Strategy):
 
     def schedule(self, positions: List[Position], data_ser: pd.Series, context: BacktestContext):
         avg: pd.Series = data_ser.apply(lambda x: x.open).rolling(self.lookback).mean()
-        has_pos = positions != []
         todays_price_ = data_ser[-1].open
+        instruction = None
         if data_ser[-2].open <= avg[-2] and todays_price_ > avg[-1]:
             instruction = TradeInstruction(todays_price_, todays_price_ - as_price(self.stop_value, data_ser.name),
                                            self.risk_per_trade,
                                            data_ser.name, data_ser[-1].date)
-            if has_pos:
-                pos = positions[-1]
-            else:
-                positions.append(Position(instruction, context.capital))
+
 
         if data_ser[-2].open >= avg[-2] and todays_price_ < avg[-1]:
             instruction = TradeInstruction(todays_price_, todays_price_ + as_price(self.stop_value, data_ser.name),
                                            self.risk_per_trade,
                                            data_ser.name, data_ser[-1].date)
-            if has_pos:
-                pos = positions[-1]
-            else:
-                positions.append(Position(instruction, context.capital))
 
-        return context
+        return instruction
 
     def run(self, rates):
         pass
