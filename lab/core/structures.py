@@ -1,5 +1,5 @@
 from enum import Enum
-
+import pandas as pd
 
 class InitError(Exception): pass
 
@@ -41,8 +41,10 @@ class TradeInstruction:
 
 class BacktestContext():
 
-    def __init__(self, capital):
+    def __init__(self, capital, currencyList):
         self.commission_per_k = 0.0
         self.spreadmap = []
         self.capital = capital
-        self.positions = []
+        self.positions = dict(map(lambda k: (k , []), currencyList))
+        self.attribution = pd.DataFrame()
+        self.pnl = pd.Series()
