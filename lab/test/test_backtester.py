@@ -52,9 +52,9 @@ class BacktesterTests(unittest.TestCase):
 
         backtester = Backtester2(strtgy)
         results = backtester.backtest(10000,price_data=create_dataframe_from_series([gbpusd]),commission_per_k=0.5)
-        expected = [0,0,0,0]
+        expected = [0,0,-5,0]
         actual = results.attribution['GBPUSD'].values
-        self.assertEquals(set(expected),set(actual))
+        self.assertEquals(list(expected),list(actual))
 
     def test_backtester_is_given_no_dataprovider_then_empty_attribution_is_returned(self):
         strtgy = SimpleMovingAvgStrategy()
@@ -62,6 +62,22 @@ class BacktesterTests(unittest.TestCase):
         backtester = Backtester2(strtgy)
         results = backtester.backtest(10000,price_data = pd.DataFrame())
         self.assertTrue(results.attribution.empty)
+
+    def test_when_strategy_places_trade_and_exits_trade_pnl_is_captured_in_attribution(self):
+        gbpusd = hp.ohlc_series([hp.ohcl(1, 0.9980, 1.0010, 0.9979),
+            hp.ohcl(0.9980, 0.9962, 0.9994, 0.9950),
+            hp.ohcl(0.9952, 0.9970, 0.9982, 0.9948),
+            hp.ohcl(0.9970, 1.0060, 1.0061, 0.9948),#Enter the trade at this point
+            hp.ohcl(1.0080, 1.0095, 1.0027, 1.0001),
+            hp.ohcl(1.0027, 1.018, 0.9975, 1.0003),#Exit the trade at this point
+            hp.ohcl(0.9975, 1.0003, 0.9920, 0.9920),],'GBPUSD')
+        strtgy = SimpleMovingAvgStrategy()
+
+        backtester = Backtester2(strtgy)
+        results = backtester.backtest(10000,price_data=create_dataframe_from_series([gbpusd]),commission_per_k=0.5)
+        expected = [0,0,-5,0,28.5,0]
+        actual = results.attribution['GBPUSD'].values
+        self.assertEquals(list(expected),list(actual))
 
 
 class Backtester2:
@@ -82,16 +98,18 @@ class Backtester2:
         for index, row in price_data.iloc[1:,:].iterrows():
             capital = self.context.pnl[t_slice]
             for currency in price_data.columns.values:
+                nom_returns = 0
                 data_ser = price_data.ix[:index,currency]
                 positions :List[Position] = self.context.positions[currency]
                 instruction = self.strategy.schedule(positions, data_ser,self.context)
 
-                if positions == [] and instruction != None:
-                    positions.append(Position(instruction, self.context.capital,commission_per_k))
-                elif positions != [] and instruction != None:
-                    positions[-1].revalue_position(instruction,price_data[index,currency],capital)
+                if instruction != None:
+                    if positions == []:
+                        positions.append(Position(instruction, self.context.capital,commission_per_k))
+                    else:
+                        positions[-1].revalue_position(instruction,price_data.loc[index,currency],capital)
+                    nom_returns = sum([p.pnl_history[-1] for p in positions])
 
-                nom_returns = sum([p.pnl_history[-1] for p in positions])
                 self.context.attribution.loc[index,currency] = nom_returns
                 capital = capital+nom_returns
                 self.context.pnl.loc[index] = capital
@@ -127,7 +145,7 @@ class SimpleMovingAvgStrategy(Strategy):
 
         if data_ser[-2].open >= avg[-2] and todays_price_ < avg[-1]:
             instruction = TradeInstruction(todays_price_, todays_price_ + as_price(self.stop_value, data_ser.name),
-                                           self.risk_per_trade,
+                                           -self.risk_per_trade,
                                            data_ser.name, data_ser[-1].date)
 
         return instruction
