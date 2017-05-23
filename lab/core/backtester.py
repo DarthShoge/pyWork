@@ -1,9 +1,11 @@
+from typing import List
+
 import numpy as np
 import pandas as pd
 
 from lab.core.position import Position
-from lab.core.common import get_range
-from lab.core.structures import TradeInstruction
+from lab.core.common import get_range, BacktestResults
+from lab.core.structures import TradeInstruction, BacktestContext
 from lab.strategy.strategy import Strategy
 
 
@@ -97,3 +99,48 @@ class Backtester:
         spread_map = Backtester.spread_map() if use_spread else None
 
         return self.backtest(capital, trade_details, rates, commission_per_k, spread_map)
+
+
+class Backtester2:
+    def __init__(self, strategy: Strategy):
+        self.strategy = strategy
+        self.position_pnls = []
+
+    def backtest(self, capital, price_data : pd.DataFrame, commission_per_k=0.0) :
+        self.context = BacktestContext(capital, price_data.columns.values)
+        self.context.pnl = pd.Series(capital,index=price_data.index.values)
+        self.context.commission_per_k = commission_per_k
+        backtest_results = BacktestResults()
+
+        if len(price_data.index) < 2 :
+            return backtest_results
+
+        t_slice = price_data.index.values[0]
+        for index, row in price_data.iloc[1:,:].iterrows():
+            capital = self.context.pnl[t_slice]
+            for currency in price_data.columns.values:
+                nom_returns = 0
+                data_ser = price_data.ix[:index,currency]
+                positions :List[Position] = self.context.positions[currency]
+                instruction = self.strategy.schedule(positions, data_ser,self.context)
+
+                if instruction != None:
+                    if positions == []:
+                        positions.append(Position(instruction, self.context.capital,commission_per_k))
+                    else:
+                        positions[-1].revalue_position(instruction,price_data.loc[index,currency],capital)
+                    nom_returns = sum([p.pnl_history[-1] for p in positions])
+
+                if positions and positions[-1].returns.__contains__(index):
+                    backtest_results.attribution.loc[index, currency] = positions[-1].returns[index]
+                else:
+                    backtest_results.attribution.loc[index, currency] = 0
+
+                self.context.nominal_attribution.loc[index, currency] = nom_returns
+                capital = capital+nom_returns
+                self.context.pnl.loc[index] = capital
+            t_slice = index
+        backtest_results.pnl = self.context.pnl
+        backtest_results.nominal_attribution = self.context.nominal_attribution
+
+        return backtest_results

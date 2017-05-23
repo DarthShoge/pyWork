@@ -46,5 +46,5 @@ class BacktestContext():
         self.spreadmap = []
         self.capital = capital
         self.positions = dict(map(lambda k: (k , []), currencyList))
-        self.attribution = pd.DataFrame()
+        self.nominal_attribution = pd.DataFrame()
         self.pnl = pd.Series()

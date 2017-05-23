@@ -71,3 +71,11 @@ def price_data_to_trade_lines(price_df, rolling_risk_df, stop_df, pips_df):
                                   trade_date=i)
             trade_details_df.set_value(i, c, td)
     return trade_details_df
+
+
+class BacktestResults:
+    def __init__(self):
+        self.nominal_attribution: pd.DataFrame = pd.DataFrame()
+        self.attribution: pd.DataFrame = pd.DataFrame()
+        self.pnl = pd.DataFrame()
+        self.headlinePnL = 0

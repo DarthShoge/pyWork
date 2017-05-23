@@ -1,12 +1,15 @@
 import unittest
-from unittest.mock import MagicMock
-import pandas as pd
-import lab.test.helpers as hp
 from typing import List
+from unittest.mock import MagicMock
+
+import numpy as np
+import pandas as pd
+
+import lab.test.helpers as hp
+from lab.core.backtester import Backtester2
+from lab.core.common import as_price
 from lab.core.position import Position
-from lab.core.common import get_range, get_pips, as_price
 from lab.core.structures import TradeInstruction, BacktestContext
-from lab.core.transaction import Transaction
 from lab.data.dataprovider import DataProvider
 from lab.strategy.strategy import Strategy
 
@@ -39,7 +42,7 @@ class BacktesterTests(unittest.TestCase):
         backtester = Backtester2(strtgy)
         results = backtester.backtest(10000,price_data=create_dataframe_from_series([gbpusd]))
         expected = [0,0,0,0]
-        actual = results.attribution['GBPUSD'].values
+        actual = results.nominal_attribution['GBPUSD'].values
         self.assertEquals(set(expected),set(actual))
 
     def test_when_strategy_places_trade_with_transaction_costs_then_transactions_included_in_attribution(self):
@@ -53,7 +56,7 @@ class BacktesterTests(unittest.TestCase):
         backtester = Backtester2(strtgy)
         results = backtester.backtest(10000,price_data=create_dataframe_from_series([gbpusd]),commission_per_k=0.5)
         expected = [0,0,-5,0]
-        actual = results.attribution['GBPUSD'].values
+        actual = results.nominal_attribution['GBPUSD'].values
         self.assertEquals(list(expected),list(actual))
 
     def test_backtester_is_given_no_dataprovider_then_empty_attribution_is_returned(self):
@@ -61,70 +64,71 @@ class BacktesterTests(unittest.TestCase):
 
         backtester = Backtester2(strtgy)
         results = backtester.backtest(10000,price_data = pd.DataFrame())
-        self.assertTrue(results.attribution.empty)
+        self.assertTrue(results.nominal_attribution.empty)
 
     def test_when_strategy_places_trade_and_exits_trade_pnl_is_captured_in_attribution(self):
-        gbpusd = hp.ohlc_series([hp.ohcl(1, 0.9980, 1.0010, 0.9979),
-            hp.ohcl(0.9980, 0.9962, 0.9994, 0.9950),
-            hp.ohcl(0.9952, 0.9970, 0.9982, 0.9948),
-            hp.ohcl(0.9970, 1.0060, 1.0061, 0.9948),#Enter the trade at this point
-            hp.ohcl(1.0080, 1.0095, 1.0027, 1.0001),
-            hp.ohcl(1.0027, 1.018, 0.9975, 1.0003),#Exit the trade at this point
-            hp.ohcl(0.9975, 1.0003, 0.9920, 0.9920),],'GBPUSD')
+        gbpusd = self.create_traded_series()
         strtgy = SimpleMovingAvgStrategy()
 
         backtester = Backtester2(strtgy)
         results = backtester.backtest(10000,price_data=create_dataframe_from_series([gbpusd]),commission_per_k=0.5)
         expected = [0,0,-5,0,28.5,0]
+        actual = results.nominal_attribution['GBPUSD'].values
+        np.testing.assert_almost_equal(list(expected),list(actual),decimal=3)
+
+    def test_when_strategy_places_trade_and_exits_then_pct_attribution_is_correctly_calculated(self):
+        gbpusd = self.create_traded_series()
+        strtgy = SimpleMovingAvgStrategy()
+
+        backtester = Backtester2(strtgy)
+        results = backtester.backtest(10000,price_data=create_dataframe_from_series([gbpusd]),commission_per_k=0.5)
+        expected = [0,0,0,0,0.00570,0]
         actual = results.attribution['GBPUSD'].values
-        self.assertEquals(list(expected),list(actual))
+        np.testing.assert_almost_equal(list(expected),list(actual),decimal=3)
+
+    def test_when_strategy_places_trade_and_exits_trade_pnl_is_captured_in_attribution(self):
+        gbpusd = self.create_traded_series()
+        strtgy = SimpleMovingAvgStrategy()
+
+        backtester = Backtester2(strtgy)
+        results = backtester.backtest(10000,price_data=create_dataframe_from_series([gbpusd]),commission_per_k=0.5)
+        expected = [0,0,-5,0,28.5,0]
+        actual = results.nominal_attribution['GBPUSD'].values
+        np.testing.assert_almost_equal(list(expected),list(actual),decimal=3)
 
 
-class Backtester2:
-    def __init__(self, strategy: Strategy):
-        self.strategy = strategy
-        self.position_pnls = []
+    def test_when_strategy_places_trade_and_exits_trade_for_multiple_currencies_pnl_is_captured_in_attribution(self):
+        gbpusd = self.create_traded_series()
+        strtgy = SimpleMovingAvgStrategy()
 
-    def backtest(self, capital, price_data : pd.DataFrame, commission_per_k=0.0):
-        self.context = BacktestContext(capital, price_data.columns.values)
-        self.context.pnl = pd.Series(capital,index=price_data.index.values)
-        self.context.commission_per_k = commission_per_k
-        backtest_results = BacktestResults()
-
-        if len(price_data.index) < 2 :
-            return backtest_results
-
-        t_slice = price_data.index.values[0]
-        for index, row in price_data.iloc[1:,:].iterrows():
-            capital = self.context.pnl[t_slice]
-            for currency in price_data.columns.values:
-                nom_returns = 0
-                data_ser = price_data.ix[:index,currency]
-                positions :List[Position] = self.context.positions[currency]
-                instruction = self.strategy.schedule(positions, data_ser,self.context)
-
-                if instruction != None:
-                    if positions == []:
-                        positions.append(Position(instruction, self.context.capital,commission_per_k))
-                    else:
-                        positions[-1].revalue_position(instruction,price_data.loc[index,currency],capital)
-                    nom_returns = sum([p.pnl_history[-1] for p in positions])
-
-                self.context.attribution.loc[index,currency] = nom_returns
-                capital = capital+nom_returns
-                self.context.pnl.loc[index] = capital
-            t_slice = index
-        backtest_results.pnl = self.context.pnl
-        backtest_results.attribution = self.context.attribution
-
-        return backtest_results
+        backtester = Backtester2(strtgy)
+        results = backtester.backtest(10000,price_data=create_dataframe_from_series([gbpusd]),commission_per_k=0.5)
+        expected = [0,0,-5,0,28.5,0]
+        actual = results.nominal_attribution['GBPUSD'].values
+        np.testing.assert_almost_equal(list(expected),list(actual),decimal=3)
 
 
-class BacktestResults:
-    def __init__(self):
-        self.attribution: pd.DataFrame = pd.DataFrame()
-        self.pnl = pd.DataFrame()
-        self.headlinePnL = 0
+    def test_when_strategy_places_trade_and_exits_trade_for_multiple_currencies_pnl_is_captured_in_attribution(self):
+        gbpusd = self.create_traded_series('GBPUSD')
+        eurusd = self.create_traded_series('EURUSD')
+        strtgy = SimpleMovingAvgStrategy()
+
+        backtester = Backtester2(strtgy)
+        results = backtester.backtest(10000,price_data=create_dataframe_from_series([gbpusd,eurusd]),commission_per_k=0.5)
+        expected = [0,0,-10,0,57,0]
+        actual = results.nominal_attribution.apply(sum, axis=1).values
+        np.testing.assert_almost_equal(list(expected),list(actual),decimal=3)
+
+
+    def create_traded_series(self, currency='GBPUSD'):
+        ser = hp.ohlc_series([hp.ohcl(1, 0.9980, 1.0010, 0.9979),
+                                 hp.ohcl(0.9980, 0.9962, 0.9994, 0.9950),
+                                 hp.ohcl(0.9952, 0.9970, 0.9982, 0.9948),
+                                 hp.ohcl(0.9970, 1.0060, 1.0061, 0.9948),  # Enter the trade at this point
+                                 hp.ohcl(1.0080, 1.0095, 1.0027, 1.0001),
+                                 hp.ohcl(1.0027, 1.018, 0.9975, 1.0003),  # Exit the trade at this point
+                                 hp.ohcl(0.9975, 1.0003, 0.9920, 0.9920), ], currency)
+        return ser
 
 
 class SimpleMovingAvgStrategy(Strategy):
@@ -140,13 +144,13 @@ class SimpleMovingAvgStrategy(Strategy):
         if data_ser[-2].open <= avg[-2] and todays_price_ > avg[-1]:
             instruction = TradeInstruction(todays_price_, todays_price_ - as_price(self.stop_value, data_ser.name),
                                            self.risk_per_trade,
-                                           data_ser.name, data_ser[-1].date)
+                                           data_ser.name, data_ser.index[-1])
 
 
         if data_ser[-2].open >= avg[-2] and todays_price_ < avg[-1]:
             instruction = TradeInstruction(todays_price_, todays_price_ + as_price(self.stop_value, data_ser.name),
                                            -self.risk_per_trade,
-                                           data_ser.name, data_ser[-1].date)
+                                           data_ser.name, data_ser.index[-1])
 
         return instruction
 

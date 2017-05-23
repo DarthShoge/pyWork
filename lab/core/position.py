@@ -2,6 +2,7 @@ from lab.core.structures import Direction, StopType
 from lab.core.transaction import Transaction
 from lab.core.pnl_line import PnlLine
 from lab.core.common import as_price
+import math
 
 
 class Position:
@@ -15,6 +16,8 @@ class Position:
         self.spread = spread
         self.pnl_history = [trsction.pnl]
         self.transaction_pnls = []
+        self.price_history = [initiating_line.price]
+        self.returns = {}
         self.currency = initiating_line.currency
 
     @property
@@ -48,6 +51,8 @@ class Position:
             raise LookupError('Currencies do not match')
 
         pnl_line = Transaction(trade_line, current_capital, commission_per_k=self.commission_per_k, spread=self.spread)
+        self.calculate_returns(pnl_line)
+
         locked_in_pnl = 0
         locked_in_pnl += self.close_stop_outs(current_candle)
 
@@ -77,7 +82,14 @@ class Position:
                             residual_risk = 0
 
         self.pnl_history.append(locked_in_pnl)
+
         return locked_in_pnl
+
+    def calculate_returns(self, pnl_line):
+        self.price_history.append(pnl_line.fill_price)
+        ret = math.log((self.price_history[-1] / self.price_history[-2])) if self.net_direction is Direction.Long else \
+            -(math.log((self.price_history[-1] / self.price_history[-2])))
+        self.returns[pnl_line.trade_details.trade_date] = ret
 
     def close_transaction(self, line):
         self.lines.remove(line)

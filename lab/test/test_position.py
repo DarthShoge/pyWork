@@ -250,6 +250,29 @@ class PositionUnitTests(unittest.TestCase):
         position.revalue_position(instruction, candle, 10000)
         self.assertAlmostEqual(-0.02, position.net_risk)
 
+    def test_revalue_position_should_calculate_pct_return_correctly_on_short(self):
+        transaction = self.create_transaction(price=1.5, stop=1.5050, risk=-0.01)
+        position = Position(transaction.trade_details, 10000)
+        instruction1 = self.create_trade_line(price=1.4990, stop=1.4950, risk=0.005)
+        candle1 = ohcl(instruction1.price,instruction1.price, instruction1.price, instruction1.price)
+        position.revalue_position(instruction1, candle1, 10000)
+        self.assertAlmostEqual(0.0006669, list(position.returns.values())[-1])
+
+
+    def test_revalue_position_should_calculate_pct_return_correctly_on_partial_close_short(self):
+        transaction = self.create_transaction(price=1.5, stop=1.5050, risk=-0.01)
+        position = Position(transaction.trade_details, 10000)
+        instruction1 = self.create_trade_line(price=1.4990, stop=1.4950, risk=0.005)
+        candle1 = ohcl(instruction1.price,instruction1.price, instruction1.price, instruction1.price)
+        position.revalue_position(instruction1, candle1, 10000)
+        instruction2 = self.create_trade_line(price=1.4980, stop=1.4940, risk=0.01)
+        candle2 = ohcl(instruction2.price,instruction2.price, instruction2.price, instruction2.price)
+        position.revalue_position(instruction2, candle2, 10000)
+        self.assertAlmostEqual(0.00066733, list(position.returns.values())[-1])
+
+
+
+
 
 
 
